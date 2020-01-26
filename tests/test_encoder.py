@@ -1,4 +1,5 @@
 import math
+from collections import namedtuple, defaultdict, Counter, OrderedDict
 
 import pytest
 
@@ -164,3 +165,34 @@ def test_encode_indefinite_length(value, encoding):
 
 def test_undefined_singleton():
     assert UndefinedObject() is UndefinedObject()
+
+
+def test_namedtuple():
+    nt = namedtuple('nt', 'a b c')
+    value = nt(1, 'bar', [1, 2])
+    e = CBOREncoder()
+    assert e.encode(value) == e.encode(tuple(value))
+
+
+# FIXME: these tests assume ordering
+def test_defaultdict():
+    d = defaultdict(list)
+    d['foo'].append(3)
+    d['foo'].append(4)
+    d[2].append(1)
+    e = CBOREncoder()
+    assert e.encode(d) == e.encode({'foo': [3, 4], 2: [1]})
+
+
+def test_counter():
+    c = Counter(cats=4, dogs=8)
+    e = CBOREncoder()
+    assert e.encode(c) == e.encode({'cats': 4, 'dogs': 8})
+
+
+def test_ordered_dict():
+    c = OrderedDict()
+    c['dogs'] = 8
+    c['cats'] = 4
+    e = CBOREncoder()
+    assert e.encode(c) == e.encode({'dogs': 8, 'cats': 4})
