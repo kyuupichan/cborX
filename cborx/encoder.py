@@ -49,6 +49,26 @@ class CBOREncodingError(CBORError):
     pass
 
 
+class CBORTag:
+
+    def __init__(self, tag, value):
+        if not isinstance(tag, int):
+            raise TypeError(f'tag {tag} must be an integer')
+        self._tag = tag
+        self._value = value
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, CBORTag)
+            and self._tag == other._tag
+            and self._value == other._value
+        )
+
+    def __cbor__(self, encoder):
+        yield from _length_parts(self._tag, 0xc0)
+        yield from encoder.encode_to_parts(self._value)
+
+
 class UndefinedObject:
 
     __instance = None
@@ -58,7 +78,7 @@ class UndefinedObject:
             cls.__instance = super().__new__(cls, *args, **kwargs)
         return cls.__instance
 
-    def __cbor__(self):
+    def __cbor__(self, _encoder):
         yield b'\xf7'
 
 
@@ -70,26 +90,41 @@ class IndefiniteLengthObject:
 
 class IndefiniteLengthByteString(IndefiniteLengthObject):
 
-    def __cbor__(self):
-        yield from _indefinite_length_byte_string_parts(self)
+    def __cbor__(self, encoder):
+        yield b'\x5f'
+        for byte_string in self.generator:
+            yield from _byte_string_parts(byte_string, encoder)
+        yield b'\xff'
 
 
 class IndefiniteLengthTextString(IndefiniteLengthObject):
 
-    def __cbor__(self):
-        yield from _indefinite_length_text_string_parts(self)
+    def __cbor__(self, encoder):
+        yield b'\x7f'
+        for text_string in self.generator:
+            yield from _text_string_parts(text_string, encoder)
+        yield b'\xff'
 
 
 class IndefiniteLengthList(IndefiniteLengthObject):
-    pass
+
+    def __cbor__(self, encoder):
+        yield b'\x9f'
+        encode_to_parts = encoder.encode_to_parts
+        for item in self.generator:
+            yield from encode_to_parts(item)
+        yield b'\xff'
 
 
 class IndefiniteLengthDict(IndefiniteLengthObject):
-    pass
 
-
-def _raise_unknown_type(value):
-    raise CBOREncodingError(f'cannot encode object of type {type(value)}')
+    def __cbor__(self, encoder):
+        yield b'\xbf'
+        encode_to_parts = encoder.encode_to_parts
+        for key, kvalue in self.generator:
+            yield from encode_to_parts(key)
+            yield from encode_to_parts(kvalue)
+        yield b'\xff'
 
 
 def _length_parts(length, major):
@@ -112,7 +147,7 @@ def _length_parts(length, major):
         raise OverflowError
 
 
-def _int_parts(value):
+def _int_parts(value, encoder):
     assert isinstance(value, int)
     if value < 0:
         value = -1 - value
@@ -124,81 +159,50 @@ def _int_parts(value):
     except OverflowError:
         bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
         yield b'\xc3' if major else b'\xc2'
-        yield from _byte_string_parts(bignum_encoding)
+        yield from _byte_string_parts(bignum_encoding, encoder)
 
 
-def _byte_string_parts(value):
+def _byte_string_parts(value, _encoder):
     assert isinstance(value, (bytes, bytearray, memoryview))
     yield from _length_parts(len(value), 0x40)
     yield value
 
 
-def _indefinite_length_byte_string_parts(value):
-    assert isinstance(value, IndefiniteLengthByteString)
-    yield b'\x5f'
-    for byte_string in value.generator:
-        yield from _byte_string_parts(byte_string)
-    yield b'\xff'
-
-
-def _text_string_parts(value):
+def _text_string_parts(value, _encoder):
     assert isinstance(value, str)
     value_utf8 = value.encode()
     yield from _length_parts(len(value_utf8), 0x60)
     yield value_utf8
 
 
-def _indefinite_length_text_string_parts(value):
-    assert isinstance(value, IndefiniteLengthTextString)
-    yield b'\x7f'
-    for text_string in value.generator:
-        yield from _text_string_parts(text_string)
-    yield b'\xff'
-
-
-def _list_parts(value, encode_to_parts):
+def _list_parts(value, encoder):
     assert isinstance(value, (tuple, list))
+    encode_to_parts = encoder.encode_to_parts
     yield from _length_parts(len(value), 0x80)
     for item in value:
         yield from encode_to_parts(item)
 
 
-def _indefinite_length_list_parts(value, encode_to_parts):
-    assert isinstance(value, IndefiniteLengthList)
-    yield b'\x9f'
-    for item in value.generator:
-        yield from encode_to_parts(item)
-    yield b'\xff'
-
-
-def _dict_parts(value, encode_to_parts):
+def _dict_parts(value, encoder):
     assert isinstance(value, dict)
     yield from _length_parts(len(value), 0xa0)
+    encode_to_parts = encoder.encode_to_parts
     for key, kvalue in value.items():
         yield from encode_to_parts(key)
         yield from encode_to_parts(kvalue)
 
 
-def _indefinite_length_dict_parts(value, encode_to_parts):
-    assert isinstance(value, IndefiniteLengthDict)
-    yield b'\xbf'
-    for key, kvalue in value.generator:
-        yield from encode_to_parts(key)
-        yield from encode_to_parts(kvalue)
-    yield b'\xff'
-
-
-def _bool_parts(value):
+def _bool_parts(value, _encoder):
     assert isinstance(value, bool)
     yield b'\xf5' if value else b'\xf4'
 
 
-def _None_parts(value):
+def _None_parts(value, _encoder):
     assert value is None
     yield b'\xf6'
 
 
-def _float_parts(value):
+def _float_parts(value, _encoder):
     '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
     assert isinstance(value, float)
     if value == value:
@@ -226,41 +230,27 @@ class CBOREncoder:
 
     def __init__(self):
         self._encoder_map = {}
-        for lhs, encoder in _encoder_map_compact.items():
-            if isinstance(encoder, str):
-                encoder = getattr(self, encoder)
-            for kind in (lhs if isinstance(lhs, tuple) else [lhs]):
-                self._encoder_map[kind] = encoder
 
-    def _list_parts(self, value):
-        yield from _list_parts(value, self.encode_to_parts)
-
-    def _dict_parts(self, value):
-        yield from _dict_parts(value, self.encode_to_parts)
-
-    def _indefinite_length_list_parts(self, value):
-        yield from _indefinite_length_list_parts(value, self.encode_to_parts)
-
-    def _indefinite_length_dict_parts(self, value):
-        yield from _indefinite_length_dict_parts(value, self.encode_to_parts)
-
-    def _inherited_encoder(self, value):
-        for kind, encoder in _encoder_map_compact.items():
-            if isinstance(value, kind):
-                self._encoder_map[type(value)] = encoder
-                return encoder
-        return None
+    def _lookup_encoder(self, value):
+        vtype = type(value)
+        result = _encoder_map_compact.get(vtype)
+        if not result:
+            result = getattr(vtype, '__cbor__', None)
+            if not result:
+                for kind, encoder in _encoder_map_compact.items():
+                    if isinstance(value, kind):
+                        result = encoder
+                if not result:
+                    raise CBOREncodingError(f'cannot encode object of type {vtype}')
+        self._encoder_map[vtype] = result
+        return result
 
     def encode_to_parts(self, value):
-        # Fast track standard types
         encoder = (
             self._encoder_map.get(type(value))
-            # Special method takes precedence
-            or getattr(type(value), '__cbor__')
-            or self._inherited_encoder(value)
-            or _raise_unknown_type(value)
+            or self._lookup_encoder(value)
         )
-        yield from encoder(value)
+        yield from encoder(value, self)
 
     def encode(self, value):
         return b''.join(self.encode_to_parts(value))
@@ -270,11 +260,9 @@ _encoder_map_compact = {
     int: _int_parts,
     (bytes, bytearray, memoryview): _byte_string_parts,
     str: _text_string_parts,
-    (tuple, list): '_list_parts',
-    dict: '_dict_parts',
+    (tuple, list): _list_parts,
+    dict: _dict_parts,
     bool: _bool_parts,
     type(None): _None_parts,
     float: _float_parts,
-    IndefiniteLengthList: '_indefinite_length_list_parts',
-    IndefiniteLengthDict: '_indefinite_length_dict_parts',
 }
