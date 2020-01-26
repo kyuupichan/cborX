@@ -183,7 +183,7 @@ def _None_parts(value):
 def _float_parts(value):
     '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
     assert isinstance(value, float)
-    if isfinite(value):
+    if value == value:
         try:
             pack4 = pack_be_float4(value)
             value4, = unpack_be_float4(pack4)
@@ -191,21 +191,17 @@ def _float_parts(value):
                 raise OverflowError
         except OverflowError:
             yield b'\xfb' + pack_be_float8(value)
-            return
-
-        try:
-            pack2 = pack_be_float2(value)
-            value2, = unpack_be_float2(pack2)
-            if value2 != value:
-                raise OverflowError
-            yield b'\xf9' + pack2
-        except OverflowError:
-            yield b'\xfa' + pack4
-    elif isnan(value):
-        yield b'\xf9\x7e\x00'
+        else:
+            try:
+                pack2 = pack_be_float2(value)
+                value2, = unpack_be_float2(pack2)
+                if value2 != value:
+                    raise OverflowError
+                yield b'\xf9' + pack2
+            except OverflowError:
+                yield b'\xfa' + pack4
     else:
-        assert isinf(value)
-        yield b'\xf9\x7c\x00' if value > 0 else b'\xf9\xfc\x00'
+        yield b'\xf9\x7e\x00'
 
 
 class CBOREncoder:
