@@ -82,6 +82,15 @@ def test_encode_dict(value, encoding):
     assert e.encode(value) == encoding
 
 
+@pytest.mark.parametrize("value, encoding", (
+    (False, b'\xf4'),
+    (True, b'\xf5'),
+))
+def test_encode_bool(value, encoding):
+    e = CBOREncoder()
+    assert e.encode(value) == encoding
+
+
 def _indefinite_empty():
     yield from ()
 
@@ -125,6 +134,8 @@ def _indefinite_dict():
      bytes.fromhex('bf01616143666f6f03ff')),
     (["a", IndefiniteLengthDict(iter([('b', 'c')]))],
      bytes.fromhex('826161bf61626163ff')),
+    (IndefiniteLengthDict(iter([('Fun', True), ('Amt', -2)])),
+     bytes.fromhex('bf6346756ef563416d7421ff')),
 ))
 def test_encode_indefinite_length(value, encoding):
     e = CBOREncoder()

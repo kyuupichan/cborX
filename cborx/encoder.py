@@ -31,7 +31,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  mmap, float, decimal, bool, None, Collections items,
+# - types  mmap, float, decimal, None, Collections items,
 #          datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array etc.
 # - recursive objects
@@ -113,6 +113,7 @@ def _byte_string_parts(value):
 
 
 def _indefinite_length_byte_string_parts(value):
+    assert isinstance(value, IndefiniteLengthByteString)
     yield b'\x5f'
     for byte_string in value.generator:
         yield from _byte_string_parts(byte_string)
@@ -127,6 +128,7 @@ def _text_string_parts(value):
 
 
 def _indefinite_length_text_string_parts(value):
+    assert isinstance(value, IndefiniteLengthTextString)
     yield b'\x7f'
     for text_string in value.generator:
         yield from _text_string_parts(text_string)
@@ -141,6 +143,7 @@ def _list_parts(value, encode_to_parts):
 
 
 def _indefinite_length_list_parts(value, encode_to_parts):
+    assert isinstance(value, IndefiniteLengthList)
     yield b'\x9f'
     for item in value.generator:
         yield from encode_to_parts(item)
@@ -156,11 +159,17 @@ def _dict_parts(value, encode_to_parts):
 
 
 def _indefinite_length_dict_parts(value, encode_to_parts):
+    assert isinstance(value, IndefiniteLengthDict)
     yield b'\xbf'
     for key, kvalue in value.generator:
         yield from encode_to_parts(key)
         yield from encode_to_parts(kvalue)
     yield b'\xff'
+
+
+def _bool_parts(value):
+    assert isinstance(value, bool)
+    yield b'\xf5' if value else b'\xf4'
 
 
 class CBOREncoder:
@@ -213,6 +222,7 @@ _encoder_map_compact = {
     str: _text_string_parts,
     (tuple, list): '_list_parts',
     dict: '_dict_parts',
+    bool: _bool_parts,
     IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
     IndefiniteLengthTextString: _indefinite_length_text_string_parts,
     IndefiniteLengthList: '_indefinite_length_list_parts',
