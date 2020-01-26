@@ -1,6 +1,6 @@
 import pytest
 
-from cborx import CBOREncoder, IndefiniteLengthByteString, IndefiniteLengthTextString
+from cborx import *
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -98,28 +98,24 @@ def _indefinite_string():
 
 
 @pytest.mark.parametrize("value, encoding", (
-    (IndefiniteLengthByteString(_indefinite_empty), bytes.fromhex('5fff')),
-    (IndefiniteLengthByteString(_indefinite_bytes), bytes.fromhex('5f42010243030405420607ff')),
-    (IndefiniteLengthTextString(_indefinite_empty), bytes.fromhex('7fff')),
-    (IndefiniteLengthTextString(_indefinite_string), bytes.fromhex('7f657374726561646d696e67ff')),
+    (IndefiniteLengthByteString(iter(())), bytes.fromhex('5fff')),
+    (IndefiniteLengthByteString(_indefinite_bytes()), bytes.fromhex('5f42010243030405420607ff')),
+    (IndefiniteLengthTextString(iter(())), bytes.fromhex('7fff')),
+    (IndefiniteLengthTextString(_indefinite_string()), bytes.fromhex('7f657374726561646d696e67ff')),
+    (IndefiniteLengthList(iter(())), bytes.fromhex('9fff')),
+    (IndefiniteLengthList(iter((1, [2, 3], IndefiniteLengthList(iter([4, 5]))))),
+     bytes.fromhex('9f018202039f0405ffff')),
+    (IndefiniteLengthList(iter([1, [2, 3], [4, 5]])),
+     bytes.fromhex('9f01820203820405ff')),
+    ([1, [2, 3], IndefiniteLengthList(iter([4,5]))],
+     bytes.fromhex('83018202039f0405ff')),
+    ([1, IndefiniteLengthList(iter([2, 3])), [4, 5]],
+     bytes.fromhex('83019f0203ff820405')),
+    (IndefiniteLengthList(range(1, 26)),
+     bytes.fromhex('9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff')),
 ))
 def test_encode_indefinite_length(value, encoding):
     e = CBOREncoder()
     assert e.encode(value) == encoding
 
-   # | [_ ]                         | 0x9fff                             |
-   # |                              |                                    |
-   # | [_ 1, [2, 3], [_ 4, 5]]      | 0x9f018202039f0405ffff             |
-   # |                              |                                    |
-   # | [_ 1, [2, 3], [4, 5]]        | 0x9f01820203820405ff               |
-   # |                              |                                    |
-   # | [1, [2, 3], [_ 4, 5]]        | 0x83018202039f0405ff               |
-   # |                              |                                    |
-   # | [1, [_ 2, 3], [4, 5]]        | 0x83019f0203ff820405               |
-   # |                              |                                    |
-   # | [_ 1, 2, 3, 4, 5, 6, 7, 8,   | 0x9f0102030405060708090a0b0c0d0e0f |
-   # | 9, 10, 11, 12, 13, 14, 15,   | 101112131415161718181819ff         |
-   # | 16, 17, 18, 19, 20, 21, 22,  |                                    |
-   # | 23, 24, 25]                  |                                    |
-   # |                              |                                    |
    # | {_ "a": 1, "b": [_ 2, 3]}    | 0xbf61610161629f0203ffff           |

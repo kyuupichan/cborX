@@ -1,4 +1,4 @@
 from cborx.encoder import (
     CBOREncoder,
-    IndefiniteLengthByteString, IndefiniteLengthTextString,
+    IndefiniteLengthByteString, IndefiniteLengthTextString, IndefiniteLengthList,
 )

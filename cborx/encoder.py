@@ -49,7 +49,7 @@ class CBOREncodingError(CBORError):
 class IndefiniteLengthObject:
 
     def __init__(self, generator):
-        self._generator = generator
+        self.generator = generator
 
 
 class IndefiniteLengthByteString(IndefiniteLengthObject):
@@ -57,6 +57,10 @@ class IndefiniteLengthByteString(IndefiniteLengthObject):
 
 
 class IndefiniteLengthTextString(IndefiniteLengthObject):
+    pass
+
+
+class IndefiniteLengthList(IndefiniteLengthObject):
     pass
 
 
@@ -107,7 +111,7 @@ def _byte_string_parts(value):
 
 def _indefinite_length_byte_string_parts(value):
     yield b'\x5f'
-    for byte_string in value._generator():
+    for byte_string in value.generator:
         yield from _byte_string_parts(byte_string)
     yield b'\xff'
 
@@ -121,7 +125,7 @@ def _text_string_parts(value):
 
 def _indefinite_length_text_string_parts(value):
     yield b'\x7f'
-    for text_string in value._generator():
+    for text_string in value.generator:
         yield from _text_string_parts(text_string)
     yield b'\xff'
 
@@ -131,6 +135,13 @@ def _list_parts(value, encode_to_parts):
     yield from _length_parts(len(value), 0x80)
     for item in value:
         yield from encode_to_parts(item)
+
+
+def _indefinite_length_list_parts(value, encode_to_parts):
+    yield b'\x9f'
+    for item in value.generator:
+        yield from encode_to_parts(item)
+    yield b'\xff'
 
 
 def _map_parts(value, encode_to_parts):
@@ -156,6 +167,9 @@ class CBOREncoder:
 
     def _map_parts(self, value):
         yield from _map_parts(value, self.encode_to_parts)
+
+    def _indefinite_length_list_parts(self, value):
+        yield from _indefinite_length_list_parts(value, self.encode_to_parts)
 
     def _lookup_encoder(self, value):
         # Handle inheritance
@@ -187,4 +201,5 @@ _encoder_map_compact = {
     dict: '_map_parts',
     IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
     IndefiniteLengthTextString: _indefinite_length_text_string_parts,
+    IndefiniteLengthList: '_indefinite_length_list_parts',
 }
