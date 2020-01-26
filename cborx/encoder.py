@@ -25,8 +25,6 @@
 
 '''CBOR encoding.'''
 
-from math import isfinite, isnan, isinf
-
 from cborx.packing import (
     pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
     pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
