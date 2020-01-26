@@ -1,1 +1,4 @@
-from cborx.encoder import CBOREncoder
+from cborx.encoder import (
+    CBOREncoder,
+    IndefiniteLengthByteString, IndefiniteLengthTextString,
+)

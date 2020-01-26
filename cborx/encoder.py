@@ -26,22 +26,41 @@
 '''CBOR encoding.'''
 
 from cborx.packing import (
-    pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64, struct_error,
+    pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
 )
 
-
-join_bytes = b''.join
+# TODO:
+#
+# - types  mmap, float, decimal, bool, None, Collections items,
+#          datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
+#          set, frozenset, array.array etc.
+# - recursive objects
+# - indefinite length objects
 
 
 class CBORError(Exception):
     pass
 
 
-class CBOREncodingError(CBORError, TypeError):
+class CBOREncodingError(CBORError):
     pass
 
 
-def _raise_unknown(value):
+class IndefiniteLengthObject:
+
+    def __init__(self, generator):
+        self._generator = generator
+
+
+class IndefiniteLengthByteString(IndefiniteLengthObject):
+    pass
+
+
+class IndefiniteLengthTextString(IndefiniteLengthObject):
+    pass
+
+
+def _raise_unknown_type(value):
     raise CBOREncodingError(f'cannot encode object of type {type(value)}')
 
 
@@ -76,13 +95,21 @@ def _int_parts(value):
         yield from _length_parts(value, major)
     except OverflowError:
         bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
-        yield pack_byte(0xc3 if major else 0xc2)
+        yield b'\xc3' if major else b'\xc2'
         yield from _byte_string_parts(bignum_encoding)
 
 
 def _byte_string_parts(value):
+    assert isinstance(value, (bytes, bytearray, memoryview))
     yield from _length_parts(len(value), 0x40)
     yield value
+
+
+def _indefinite_length_byte_string_parts(value):
+    yield b'\x5f'
+    for byte_string in value._generator():
+        yield from _byte_string_parts(byte_string)
+    yield b'\xff'
 
 
 def _text_string_parts(value):
@@ -90,6 +117,13 @@ def _text_string_parts(value):
     value_utf8 = value.encode()
     yield from _length_parts(len(value_utf8), 0x60)
     yield value_utf8
+
+
+def _indefinite_length_text_string_parts(value):
+    yield b'\x7f'
+    for text_string in value._generator():
+        yield from _text_string_parts(text_string)
+    yield b'\xff'
 
 
 def _list_parts(value, encode_to_parts):
@@ -105,22 +139,6 @@ def _map_parts(value, encode_to_parts):
     for key, kvalue in value.items():
         yield from encode_to_parts(key)
         yield from encode_to_parts(kvalue)
-
-
-class CBORIndefiniteByteString:
-
-    def __init__(self, write):
-        self._write = write
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        if exc_type is None:
-            self._write(b'\xff')
-
-    def append(self, value):
-        _encode_byte_string(self._write, value)
 
 
 class CBOREncoder:
@@ -147,16 +165,13 @@ class CBOREncoder:
                 return encoder
         return None
 
-    def indefinite_byte_string(self):
-        return CBORIndefiniteByteString(self)
-
     def encode_to_parts(self, value):
         # Fast track standard types
         encoder = (
             self._encoder_map.get(type(value))
             or self._lookup_encoder(value)
             # FIXME: admit type-specific encoding via an attribute
-            or _raise_unknown(value)
+            or _raise_unknown_type(value)
         )
         yield from encoder(value)
 
@@ -170,7 +185,6 @@ _encoder_map_compact = {
     str: _text_string_parts,
     (tuple, list): '_list_parts',
     dict: '_map_parts',
-    # TODO: mmap, float, decimal, bool, None, Collections items,
-    # datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
-    # set, frozenset, array.array etc.
+    IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
+    IndefiniteLengthTextString: _indefinite_length_text_string_parts,
 }
