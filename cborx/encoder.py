@@ -35,7 +35,6 @@ from cborx.packing import (
 #          datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array etc.
 # - recursive objects
-# - indefinite length objects
 
 
 class CBORError(Exception):
@@ -61,6 +60,10 @@ class IndefiniteLengthTextString(IndefiniteLengthObject):
 
 
 class IndefiniteLengthList(IndefiniteLengthObject):
+    pass
+
+
+class IndefiniteLengthDict(IndefiniteLengthObject):
     pass
 
 
@@ -144,12 +147,20 @@ def _indefinite_length_list_parts(value, encode_to_parts):
     yield b'\xff'
 
 
-def _map_parts(value, encode_to_parts):
+def _dict_parts(value, encode_to_parts):
     assert isinstance(value, dict)
     yield from _length_parts(len(value), 0xa0)
     for key, kvalue in value.items():
         yield from encode_to_parts(key)
         yield from encode_to_parts(kvalue)
+
+
+def _indefinite_length_dict_parts(value, encode_to_parts):
+    yield b'\xbf'
+    for key, kvalue in value.generator:
+        yield from encode_to_parts(key)
+        yield from encode_to_parts(kvalue)
+    yield b'\xff'
 
 
 class CBOREncoder:
@@ -165,11 +176,14 @@ class CBOREncoder:
     def _list_parts(self, value):
         yield from _list_parts(value, self.encode_to_parts)
 
-    def _map_parts(self, value):
-        yield from _map_parts(value, self.encode_to_parts)
+    def _dict_parts(self, value):
+        yield from _dict_parts(value, self.encode_to_parts)
 
     def _indefinite_length_list_parts(self, value):
         yield from _indefinite_length_list_parts(value, self.encode_to_parts)
+
+    def _indefinite_length_dict_parts(self, value):
+        yield from _indefinite_length_dict_parts(value, self.encode_to_parts)
 
     def _lookup_encoder(self, value):
         # Handle inheritance
@@ -198,8 +212,9 @@ _encoder_map_compact = {
     (bytes, bytearray, memoryview): _byte_string_parts,
     str: _text_string_parts,
     (tuple, list): '_list_parts',
-    dict: '_map_parts',
+    dict: '_dict_parts',
     IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
     IndefiniteLengthTextString: _indefinite_length_text_string_parts,
     IndefiniteLengthList: '_indefinite_length_list_parts',
+    IndefiniteLengthDict: '_indefinite_length_dict_parts',
 }

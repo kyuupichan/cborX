@@ -77,7 +77,7 @@ def test_encode_list(value, encoding):
     ({"a": "A", "b": "B", "c": "C", "d": "D", "e": "E"},
      bytes.fromhex('a56161614161626142616361436164614461656145')),
 ))
-def test_encode_map(value, encoding):
+def test_encode_dict(value, encoding):
     e = CBOREncoder()
     assert e.encode(value) == encoding
 
@@ -97,6 +97,11 @@ def _indefinite_string():
     yield 'ming'
 
 
+def _indefinite_dict():
+    yield 1, 'a'
+    yield b'foo', 3
+
+
 @pytest.mark.parametrize("value, encoding", (
     (IndefiniteLengthByteString(iter(())), bytes.fromhex('5fff')),
     (IndefiniteLengthByteString(_indefinite_bytes()), bytes.fromhex('5f42010243030405420607ff')),
@@ -113,9 +118,14 @@ def _indefinite_string():
      bytes.fromhex('83019f0203ff820405')),
     (IndefiniteLengthList(range(1, 26)),
      bytes.fromhex('9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff')),
+    (IndefiniteLengthDict(iter(())), bytes.fromhex('bfff')),
+    (IndefiniteLengthDict(iter([('a', 1), ('b', IndefiniteLengthList(iter([2, 3])))])),
+     bytes.fromhex('bf61610161629f0203ffff')),
+    (IndefiniteLengthDict(_indefinite_dict()),
+     bytes.fromhex('bf01616143666f6f03ff')),
+    (["a", IndefiniteLengthDict(iter([('b', 'c')]))],
+     bytes.fromhex('826161bf61626163ff')),
 ))
 def test_encode_indefinite_length(value, encoding):
     e = CBOREncoder()
     assert e.encode(value) == encoding
-
-   # | {_ "a": 1, "b": [_ 2, 3]}    | 0xbf61610161629f0203ffff           |
