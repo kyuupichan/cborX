@@ -31,7 +31,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  mmap, float, decimal, None, Collections items,
+# - types  mmap, float, decimal, Collections items,
 #          datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array etc.
 # - recursive objects
@@ -172,6 +172,11 @@ def _bool_parts(value):
     yield b'\xf5' if value else b'\xf4'
 
 
+def _None_parts(value):
+    assert value is None
+    yield b'\xf6'
+
+
 class CBOREncoder:
 
     def __init__(self):
@@ -223,6 +228,7 @@ _encoder_map_compact = {
     (tuple, list): '_list_parts',
     dict: '_dict_parts',
     bool: _bool_parts,
+    type(None): _None_parts,
     IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
     IndefiniteLengthTextString: _indefinite_length_text_string_parts,
     IndefiniteLengthList: '_indefinite_length_list_parts',

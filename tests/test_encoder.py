@@ -85,8 +85,9 @@ def test_encode_dict(value, encoding):
 @pytest.mark.parametrize("value, encoding", (
     (False, b'\xf4'),
     (True, b'\xf5'),
+    (None, b'\xf6'),
 ))
-def test_encode_bool(value, encoding):
+def test_encode_simple(value, encoding):
     e = CBOREncoder()
     assert e.encode(value) == encoding
 
