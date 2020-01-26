@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from cborx import *
@@ -86,6 +88,22 @@ def test_encode_dict(value, encoding):
     (False, b'\xf4'),
     (True, b'\xf5'),
     (None, b'\xf6'),
+    (0.0, bytes.fromhex('f90000')),
+    (-0.0, bytes.fromhex('f98000')),
+    (1.0, bytes.fromhex('f93c00')),
+    (1.1, bytes.fromhex('fb3ff199999999999a')),
+    (1.5, bytes.fromhex('f93e00')),
+    (65504.0, bytes.fromhex('f97bff')),
+    (100000.0, bytes.fromhex('fa47c35000')),
+    (3.4028234663852886e+38, bytes.fromhex('fa7f7fffff')),
+    (1.0e+300, bytes.fromhex('fb7e37e43c8800759c')),
+    (5.960464477539063e-8, bytes.fromhex('f90001')),
+    (0.00006103515625, bytes.fromhex('f90400')),
+    (-4.0, bytes.fromhex('f9c400')),
+    (-4.1, bytes.fromhex('fbc010666666666666')),
+    (math.inf, bytes.fromhex('f97c00')),
+    (math.nan, bytes.fromhex('f97e00')),
+    (-math.inf, bytes.fromhex('f9fc00')),
 ))
 def test_encode_simple(value, encoding):
     e = CBOREncoder()

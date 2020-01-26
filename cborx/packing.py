@@ -24,29 +24,7 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # and warranty status of this software.
 
-__all__ = (
-    'pack_le_int32', 'pack_le_int64',
-    'pack_le_uint16', 'pack_le_uint32', 'pack_le_uint64',
-    'pack_be_uint16', 'pack_be_uint32', 'pack_be_uint64',
-    'pack_byte', 'pack_port', 'pack_varint', 'pack_varbytes', 'pack_list',
-    'unpack_le_int32', 'unpack_le_int32_from',
-    'unpack_le_int64', 'unpack_le_int64_from',
-    'unpack_le_uint16', 'unpack_le_uint16_from',
-    'unpack_le_uint32', 'unpack_le_uint32_from',
-    'unpack_le_uint64', 'unpack_le_uint64_from',
-    'unpack_be_uint16', 'unpack_be_uint16_from',
-    'unpack_be_uint32', 'unpack_be_uint32_from',
-    'unpack_be_uint64', 'unpack_be_uint64_from',
-    'unpack_byte', 'unpack_port', 'unpack_header',
-    'read_le_int32', 'read_le_int64',
-    'read_le_uint16', 'read_le_uint32', 'read_le_uint64',
-    'read_be_uint16', 'read_be_uint32', 'read_be_uint64',
-    'read_varint', 'read_varbytes', 'read_list',
-)
-
-
-from struct import Struct, error as struct_error
-from functools import partial
+from struct import Struct
 
 
 struct_le_i = Struct('<i')
@@ -57,8 +35,10 @@ struct_le_Q = Struct('<Q')
 struct_be_H = Struct('>H')
 struct_be_I = Struct('>I')
 struct_be_Q = Struct('>Q')
+struct_be_e = Struct('>e')
+struct_be_f = Struct('>f')
+struct_be_d = Struct('>d')
 structB = Struct('B')
-struct_header = Struct('<i 32s 32s 3I')
 
 pack_le_int32 = struct_le_i.pack
 pack_le_int64 = struct_le_q.pack
@@ -87,8 +67,12 @@ unpack_be_uint32_from = struct_be_I.unpack_from
 unpack_be_uint64 = struct_be_Q.unpack
 unpack_be_uint64_from = struct_be_Q.unpack_from
 unpack_byte = structB.unpack
-unpack_header = struct_header.unpack
 
-pack_port = pack_be_uint16
-unpack_port = unpack_be_uint16
+pack_be_float2 = struct_be_e.pack
+pack_be_float4 = struct_be_f.pack
+pack_be_float8 = struct_be_d.pack
+unpack_be_float2 = struct_be_e.unpack
+unpack_be_float4 = struct_be_f.unpack
+unpack_be_float8 = struct_be_d.unpack
+
 hex_to_bytes = bytes.fromhex

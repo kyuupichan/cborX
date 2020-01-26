@@ -25,13 +25,16 @@
 
 '''CBOR encoding.'''
 
+from math import isfinite, isnan, isinf
+
 from cborx.packing import (
     pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
+    pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
 
 # TODO:
 #
-# - types  mmap, float, decimal, Collections items,
+# - types  mmap, decimal, Collections items,
 #          datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array etc.
 # - recursive objects
@@ -177,6 +180,34 @@ def _None_parts(value):
     yield b'\xf6'
 
 
+def _float_parts(value):
+    '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
+    assert isinstance(value, float)
+    if isfinite(value):
+        try:
+            pack4 = pack_be_float4(value)
+            value4, = unpack_be_float4(pack4)
+            if value4 != value:
+                raise OverflowError
+        except OverflowError:
+            yield b'\xfb' + pack_be_float8(value)
+            return
+
+        try:
+            pack2 = pack_be_float2(value)
+            value2, = unpack_be_float2(pack2)
+            if value2 != value:
+                raise OverflowError
+            yield b'\xf9' + pack2
+        except OverflowError:
+            yield b'\xfa' + pack4
+    elif isnan(value):
+        yield b'\xf9\x7e\x00'
+    else:
+        assert isinf(value)
+        yield b'\xf9\x7c\x00' if value > 0 else b'\xf9\xfc\x00'
+
+
 class CBOREncoder:
 
     def __init__(self):
@@ -229,6 +260,7 @@ _encoder_map_compact = {
     dict: '_dict_parts',
     bool: _bool_parts,
     type(None): _None_parts,
+    float: _float_parts,
     IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
     IndefiniteLengthTextString: _indefinite_length_text_string_parts,
     IndefiniteLengthList: '_indefinite_length_list_parts',
