@@ -155,7 +155,12 @@ def _indefinite_dict():
      bytes.fromhex('826161bf61626163ff')),
     (IndefiniteLengthDict(iter([('Fun', True), ('Amt', -2)])),
      bytes.fromhex('bf6346756ef563416d7421ff')),
+    (UndefinedObject(), b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
     e = CBOREncoder()
     assert e.encode(value) == encoding
+
+
+def test_undefined_singleton():
+    assert UndefinedObject() is UndefinedObject()

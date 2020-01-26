@@ -36,8 +36,9 @@ from cborx.packing import (
 #
 # - types  mmap, decimal, Collections items,
 #          datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
-#          set, frozenset, array.array etc.
+#          set, frozenset, array.array, undefined, simple types etc.
 # - recursive objects
+# - semantic tagging to force e.g. a particular float representation
 
 
 class CBORError(Exception):
@@ -48,6 +49,19 @@ class CBOREncodingError(CBORError):
     pass
 
 
+class UndefinedObject:
+
+    __instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls.__instance:
+            cls.__instance = super().__new__(cls, *args, **kwargs)
+        return cls.__instance
+
+    def __cbor__(self):
+        yield b'\xf7'
+
+
 class IndefiniteLengthObject:
 
     def __init__(self, generator):
@@ -55,11 +69,15 @@ class IndefiniteLengthObject:
 
 
 class IndefiniteLengthByteString(IndefiniteLengthObject):
-    pass
+
+    def __cbor__(self):
+        yield from _indefinite_length_byte_string_parts(self)
 
 
 class IndefiniteLengthTextString(IndefiniteLengthObject):
-    pass
+
+    def __cbor__(self):
+        yield from _indefinite_length_text_string_parts(self)
 
 
 class IndefiniteLengthList(IndefiniteLengthObject):
@@ -226,8 +244,7 @@ class CBOREncoder:
     def _indefinite_length_dict_parts(self, value):
         yield from _indefinite_length_dict_parts(value, self.encode_to_parts)
 
-    def _lookup_encoder(self, value):
-        # Handle inheritance
+    def _inherited_encoder(self, value):
         for kind, encoder in _encoder_map_compact.items():
             if isinstance(value, kind):
                 self._encoder_map[type(value)] = encoder
@@ -238,8 +255,9 @@ class CBOREncoder:
         # Fast track standard types
         encoder = (
             self._encoder_map.get(type(value))
-            or self._lookup_encoder(value)
-            # FIXME: admit type-specific encoding via an attribute
+            # Special method takes precedence
+            or getattr(type(value), '__cbor__')
+            or self._inherited_encoder(value)
             or _raise_unknown_type(value)
         )
         yield from encoder(value)
@@ -257,8 +275,6 @@ _encoder_map_compact = {
     bool: _bool_parts,
     type(None): _None_parts,
     float: _float_parts,
-    IndefiniteLengthByteString: _indefinite_length_byte_string_parts,
-    IndefiniteLengthTextString: _indefinite_length_text_string_parts,
     IndefiniteLengthList: '_indefinite_length_list_parts',
     IndefiniteLengthDict: '_indefinite_length_dict_parts',
 }
