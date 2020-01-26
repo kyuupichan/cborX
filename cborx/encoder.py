@@ -25,7 +25,12 @@
 
 '''CBOR encoding.'''
 
-from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
+from cborx.packing import (
+    pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64, struct_error,
+)
+
+
+join_bytes = b''.join
 
 
 class CBORError(Exception):
@@ -36,25 +41,70 @@ class CBOREncodingError(CBORError, TypeError):
     pass
 
 
-def _encode_length(length, major):
-    assert 0 <= length < 18446744073709551616
+def _raise_unknown(value):
+    raise CBOREncodingError(f'cannot encode object of type {type(value)}')
+
+
+def _length_parts(length, major):
+    assert length >= 0
     if length < 24:
-        return pack_byte(major + length)
+        yield pack_byte(major + length)
     elif length < 256:
-        return pack_byte(major + 24) + pack_byte(length)
+        yield pack_byte(major + 24)
+        yield pack_byte(length)
     elif length < 65536:
-        return pack_byte(major + 25) + pack_be_uint16(length)
+        yield pack_byte(major + 25)
+        yield pack_be_uint16(length)
     elif length < 4294967296:
-        return pack_byte(major + 26) + pack_be_uint32(length)
+        yield pack_byte(major + 26)
+        yield pack_be_uint32(length)
+    elif length < 18446744073709551616:
+        yield pack_byte(major + 27)
+        yield pack_be_uint64(length)
     else:
-        return pack_byte(major + 27) + pack_be_uint64(length)
+        raise OverflowError
 
 
-def _encode_byte_string(write, value):
-    if not isinstance(value, (bytes, bytearray, memoryview)):
-        raise CBOREncodingError(f'expected a byte string, not object of type {type(value)}')
-    write(_encode_length(len(value), 0x40))
-    write(value)
+def _int_parts(value):
+    assert isinstance(value, int)
+    if value < 0:
+        value = -1 - value
+        major = 0x20
+    else:
+        major = 0x00
+    try:
+        yield from _length_parts(value, major)
+    except OverflowError:
+        bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
+        yield pack_byte(0xc3 if major else 0xc2)
+        yield from _byte_string_parts(bignum_encoding)
+
+
+def _byte_string_parts(value):
+    yield from _length_parts(len(value), 0x40)
+    yield value
+
+
+def _text_string_parts(value):
+    assert isinstance(value, str)
+    value_utf8 = value.encode()
+    yield from _length_parts(len(value_utf8), 0x60)
+    yield value_utf8
+
+
+def _list_parts(value, encode_to_parts):
+    assert isinstance(value, (tuple, list))
+    yield from _length_parts(len(value), 0x80)
+    for item in value:
+        yield from encode_to_parts(item)
+
+
+def _map_parts(value, encode_to_parts):
+    assert isinstance(value, dict)
+    yield from _length_parts(len(value), 0xa0)
+    for key, kvalue in value.items():
+        yield from encode_to_parts(key)
+        yield from encode_to_parts(kvalue)
 
 
 class CBORIndefiniteByteString:
@@ -75,63 +125,52 @@ class CBORIndefiniteByteString:
 
 class CBOREncoder:
 
-    def __init__(self, write):
-        self._write = write
+    def __init__(self):
+        self._encoder_map = {}
+        for lhs, encoder in _encoder_map_compact.items():
+            if isinstance(encoder, str):
+                encoder = getattr(self, encoder)
+            for kind in (lhs if isinstance(lhs, tuple) else [lhs]):
+                self._encoder_map[kind] = encoder
 
-    def _encode_int(self, value):
-        assert isinstance(value, int)
-        if value < 0:
-            value = -1 - value
-            major = 0x20
-        else:
-            major = 0x00
-        if value < 18446744073709551616:
-            self._write(_encode_length(value, major))
-        else:
-            raise ValueError('bignums not supported')
+    def _list_parts(self, value):
+        yield from _list_parts(value, self.encode_to_parts)
 
-    def _encode_byte_string(self, value):
-        assert isinstance(value, (bytes, bytearray, memoryview))
-        self._write(_encode_length(len(value), 2))
-        self._write(value)
-
-    def _encode_text_string(self, value):
-        assert isinstance(value, str)
-        value_utf8 = value.encode()
-        self._write(_encode_length(len(value_utf8), 3))
-        self._write(value_utf8)
+    def _map_parts(self, value):
+        yield from _map_parts(value, self.encode_to_parts)
 
     def _lookup_encoder(self, value):
         # Handle inheritance
-        for kind, encoder in _encoding_table.items():
+        for kind, encoder in _encoder_map_compact.items():
             if isinstance(value, kind):
-                _encoding_table[type(value)] = encoder
+                self._encoder_map[type(value)] = encoder
                 return encoder
         return None
 
     def indefinite_byte_string(self):
         return CBORIndefiniteByteString(self)
 
-    def encode(self, value):
+    def encode_to_parts(self, value):
         # Fast track standard types
         encoder = (
-            _encoding_table.get(type(value))
-            or self._lookup_slow(value)
+            self._encoder_map.get(type(value))
+            or self._lookup_encoder(value)
             # FIXME: admit type-specific encoding via an attribute
+            or _raise_unknown(value)
         )
-        if encoder:
-            encoder(self, value)
-        else:
-            raise CBOREncodingError(f'cannot encode object of type {type(value)}')
+        yield from encoder(value)
+
+    def encode(self, value):
+        return b''.join(self.encode_to_parts(value))
 
 
-_encoding_table = {
-    int: CBOREncoder._encode_int,
-    bytes: CBOREncoder._encode_byte_string,
-    bytearray: CBOREncoder._encode_byte_string,
-    memoryview: CBOREncoder._encode_byte_string,
-    str: CBOREncoder._encode_text_string,
-    # TODO: mmap, float, decimal, bool, None, tuple, list, dict, Collections items,
+_encoder_map_compact = {
+    int: _int_parts,
+    (bytes, bytearray, memoryview): _byte_string_parts,
+    str: _text_string_parts,
+    (tuple, list): '_list_parts',
+    dict: '_map_parts',
+    # TODO: mmap, float, decimal, bool, None, Collections items,
     # datetime, regexp, fractions, mime, uuid, ipv4, ipv6, ipv4network, ipv6network,
-    # set, frozenset, etc.
+    # set, frozenset, array.array etc.
 }
