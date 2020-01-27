@@ -3,6 +3,7 @@ from collections import namedtuple, defaultdict, Counter, OrderedDict
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
 from fractions import Fraction
+from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 import re
 
@@ -295,11 +296,23 @@ def test_date(value, expected):
     (Fraction(2, 5), 'd81e820205'),
     (Fraction(-3, 5), 'd81e822205'),
     (Fraction(-8, -14), 'd81e820407'),
+    (IPv4Address('192.168.1.5'), 'd9010444c0a80105'),
+    (IPv4Address('192.10.10.1'), 'd9010444c00a0a01'),
+    (IPv6Address('32:193:56:77::2'), 'd901045000320193005600770000000000000002'),
+    (IPv6Address('2001:db8:85a3::8a2e:370:7334'), 'd901045020010db885a3000000008a2e03707334'),
+    (IPv4Network('0.0.0.0/0'), 'd90105a1440000000000'),
+    (IPv4Network('192.168.0.100/24', strict=False), 'd90105a144c0a800001818'),
+    (IPv6Network('2001:db8:85a3:0:0:8a2e::/96', strict=False),
+     'd90105a15020010db885a3000000008a2e000000001860'),
+], ids = [
+    'regex 1', 'regex 2',
+    'UUID',
+    'Fraction 1', 'Fraction 2', 'Fraction 3',
+    'IPv4 1', 'IPv4 2', 'IPv6 1', 'IPv6 2', 'IPv4 Network 1', 'IPv4 Network 2', 'IPv6 Network',
 ])
 def test_encodings(value, expected):
     e = CBOREncoder()
     result = e.encode(value)
-    print(result.hex())
     assert result == bytes.fromhex(expected)
 
 

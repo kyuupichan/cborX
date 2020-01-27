@@ -31,6 +31,7 @@ from decimal import Decimal
 from enum import IntEnum
 from fractions import Fraction
 from functools import partial
+from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 
 from cborx.packing import (
@@ -40,8 +41,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  ipv4, ipv6, ipv4network, ipv6network,
-#          set, frozenset, array.array, undefined, simple types etc.
+# - types:  set, frozenset, array.array, undefined, simple types etc.
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
 
@@ -329,6 +329,17 @@ class CBOREncoder:
         yield from self.tag_parts(37)
         yield from self.byte_string_parts(value.bytes)
 
+    def ip_address_parts(self, value):
+        assert isinstance(value, (IPv4Address, IPv6Address))
+        yield from self.tag_parts(260)
+        yield from self.byte_string_parts(value.packed)
+
+    def ip_network_parts(self, value):
+        assert isinstance(value, (IPv4Network, IPv6Network))
+        yield from self.tag_parts(261)
+        # For some daft reason a dictionary was chosen over a list
+        yield from self.dict_parts({value.network_address.packed: value.prefixlen})
+
     def generate_parts(self, value):
         parts_gen = self._parts_generators.get(type(value)) or self._lookup_encoder(value)
         yield from parts_gen(value)
@@ -340,8 +351,6 @@ class CBOREncoder:
 
 
 regexp_type = type(re.compile(''))
-
-
 default_generators = {
     int: 'int_parts',
     (bytes, bytearray, memoryview): 'byte_string_parts',
@@ -357,4 +366,6 @@ default_generators = {
     regexp_type: 'regexp_parts',
     UUID: 'uuid_parts',
     Fraction: 'fraction_parts',
+    (IPv4Address, IPv6Address): 'ip_address_parts',
+    (IPv4Network, IPv6Network): 'ip_network_parts',
 }
