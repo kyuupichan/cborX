@@ -25,10 +25,12 @@
 
 '''CBOR encoding.'''
 
+import re
 from datetime import datetime, date
 from decimal import Decimal
 from enum import IntEnum
 from functools import partial
+from uuid import UUID
 
 from cborx.packing import (
     pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
@@ -37,8 +39,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  regexp, fractions, mime, uuid,
-#          ipv4, ipv6, ipv4network, ipv6network,
+# - types  fractions, ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array, undefined, simple types etc.
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
@@ -312,6 +313,16 @@ class CBOREncoder:
         else:
             yield from self.float_parts(float(value))
 
+    def regexp_parts(self, value):
+        assert isinstance(value, regexp_type)
+        yield from self.tag_parts(35)
+        yield from self.text_string_parts(value.pattern)
+
+    def uuid_parts(self, value):
+        assert isinstance(value, UUID)
+        yield from self.tag_parts(37)
+        yield from self.byte_string_parts(value.bytes)
+
     def generate_parts(self, value):
         parts_gen = self._parts_generators.get(type(value)) or self._lookup_encoder(value)
         yield from parts_gen(value)
@@ -320,6 +331,9 @@ class CBOREncoder:
 
     def encode(self, value):
         return b''.join(self.generate_parts(value))
+
+
+regexp_type = type(re.compile(''))
 
 
 default_generators = {
@@ -334,4 +348,6 @@ default_generators = {
     datetime: 'datetime_parts',
     date: 'date_parts',
     Decimal: 'decimal_parts',
+    regexp_type: 'regexp_parts',
+    UUID: 'uuid_parts',
 }
