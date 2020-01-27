@@ -1,5 +1,6 @@
 import math
 from collections import namedtuple, defaultdict, Counter, OrderedDict
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -196,3 +197,63 @@ def test_ordered_dict():
     c['cats'] = 4
     e = CBOREncoder()
     assert e.encode(c) == e.encode({'dogs': 8, 'cats': 4})
+
+
+# Tests from https://github.com/agronholm/cbor2/
+@pytest.mark.parametrize('value, style, expected', [
+    (datetime(2013, 3, 21, 20, 4, 0, tzinfo=timezone.utc), CBORDateTimeStyle.ISO_WITH_Z,
+     'c074323031332d30332d32315432303a30343a30305a'),
+    (datetime(2013, 3, 21, 20, 4, 0, 380841, tzinfo=timezone.utc), CBORDateTimeStyle.ISO_WITH_Z,
+     'c0781b323031332d30332d32315432303a30343a30302e3338303834315a'),
+    (datetime(2013, 3, 21, 22, 4, 0, tzinfo=timezone(timedelta(hours=2))),
+     CBORDateTimeStyle.ISO_WITH_Z,
+     'c07819323031332d30332d32315432323a30343a30302b30323a3030'),
+    (datetime(2013, 3, 21, 20, 4, 0, tzinfo=timezone.utc), CBORDateTimeStyle.ISO_WITHOUT_Z,
+     'c07819323031332d30332d32315432303a30343a30302b30303a3030'),
+    (datetime(2013, 3, 21, 20, 4, 0, 380841, tzinfo=timezone.utc), CBORDateTimeStyle.ISO_WITHOUT_Z,
+     'c07820323031332d30332d32315432303a30343a30302e3338303834312b30303a3030'),
+    (datetime(2013, 3, 21, 22, 4, 0, tzinfo=timezone(timedelta(hours=2))),
+     CBORDateTimeStyle.ISO_WITHOUT_Z,
+     'c07819323031332d30332d32315432323a30343a30302b30323a3030'),
+    (datetime(2013, 3, 21, 20, 4, 0, tzinfo=timezone.utc), CBORDateTimeStyle.TIMESTAMP,
+     'c11a514b67b0'),
+    (datetime(2013, 3, 21, 20, 4, 0, 123456, tzinfo=timezone.utc), CBORDateTimeStyle.TIMESTAMP,
+     'c1fb41d452d9ec07e6b4'),
+    (datetime(2013, 3, 21, 22, 4, 0, tzinfo=timezone(timedelta(hours=2))),
+     CBORDateTimeStyle.TIMESTAMP, 'c11a514b67b0')
+], ids=[
+    'datetimeZ/utc',
+    'datetimeZ+micro/utc',
+    'datetimeZ/eet',
+    'datetime/utc',
+    'datetime+micro/utc',
+    'datetime/eet',
+    'timestamp/utc',
+    'timestamp+micro/utc',
+    'timestamp/eet'
+])
+def test_datetime_explicit_tzinfo(value, style, expected):
+    e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style))
+    result = e.encode(value)
+    assert result == bytes.fromhex(expected)
+
+
+@pytest.mark.parametrize('value, style, expected', [
+    (datetime(2013, 3, 21, 20, 4, 0), CBORDateTimeStyle.ISO_WITH_Z,
+     'c074323031332d30332d32315432303a30343a30305a'),
+], ids=[
+    'naive',
+])
+def test_datetime_enoder_tzinfo(value, style, expected):
+    e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style))
+    with pytest.raises(CBOREncodingError):
+        e.encode(value)
+    e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style, tzinfo=timezone.utc))
+    result = e.encode(value)
+    assert result == bytes.fromhex(expected)
+
+
+def test_default_enconder_options():
+    options = CBOREncoderOptions()
+    assert options.datetime_style == CBORDateTimeStyle.TIMESTAMP
+    assert options.tzinfo is None
