@@ -1,6 +1,7 @@
 import math
 from collections import namedtuple, defaultdict, Counter, OrderedDict
 from datetime import datetime, timedelta, timezone, date
+from decimal import Decimal
 
 import pytest
 
@@ -260,6 +261,28 @@ def test_datetime_enoder_tzinfo(value, style, expected):
 def test_date(value, expected):
     e = CBOREncoder()
     result = e.encode(value)
+    assert result == bytes.fromhex(expected)
+
+
+@pytest.mark.parametrize('value, expected', [
+    (Decimal('0'), 'c4820000'),
+    (Decimal('0.0'), 'c4822000'),
+    (Decimal('-0'), 'c4820000'),
+    (Decimal('-0.0'), 'c4822000'),
+    (Decimal('-1.15'), 'c482213872'),
+    (Decimal('273.15'), 'c48221196ab3'),
+    (Decimal('14.123'), 'c4822219372b'),
+    (Decimal('-14.123'), 'c4822239372a'),
+    (Decimal('235.7649538178625382398569286398758758232'),
+     'c4823824c25106edb2c8ce1a9626c19c3a9efaf6b22758'),
+    (Decimal('inf'), 'f97c00'),
+    (Decimal('nan'), 'f97e00'),
+    (Decimal('-inf'),'f9fc00'),
+])
+def test_date(value, expected):
+    e = CBOREncoder()
+    result = e.encode(value)
+    print(result.hex())
     assert result == bytes.fromhex(expected)
 
 

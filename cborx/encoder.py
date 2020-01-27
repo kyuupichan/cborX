@@ -26,6 +26,7 @@
 '''CBOR encoding.'''
 
 from datetime import datetime, date
+from decimal import Decimal
 from enum import IntEnum
 from functools import partial
 
@@ -36,7 +37,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  mmap, decimal, regexp, fractions, mime, uuid,
+# - types  regexp, fractions, mime, uuid,
 #          ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array, undefined, simple types etc.
 # - recursive objects
@@ -298,9 +299,24 @@ class CBOREncoder:
         yield from self.tag_parts(0)
         yield from self.text_string_parts(value.isoformat())
 
+    def decimal_parts(self, value):
+        assert isinstance(value, Decimal)
+        dt = value.as_tuple()
+        # Is this decimal finite?
+        if isinstance(dt.exponent, int):
+            mantissa = int(''.join(str(digit) for digit in dt.digits))
+            if dt.sign:
+                mantissa = -mantissa
+            yield from self.tag_parts(4)
+            yield from self.list_parts((dt.exponent, mantissa))
+        else:
+            yield from self.float_parts(float(value))
+
     def generate_parts(self, value):
         parts_gen = self._parts_generators.get(type(value)) or self._lookup_encoder(value)
         yield from parts_gen(value)
+
+    # Main external APIs
 
     def encode(self, value):
         return b''.join(self.generate_parts(value))
@@ -317,4 +333,5 @@ default_generators = {
     float: 'float_parts',
     datetime: 'datetime_parts',
     date: 'date_parts',
+    Decimal: 'decimal_parts',
 }
