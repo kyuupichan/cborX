@@ -27,6 +27,7 @@
 
 from datetime import datetime, date
 from enum import IntEnum
+from functools import partial
 
 from cborx.packing import (
     pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
@@ -84,7 +85,7 @@ class UndefinedObject:
             cls.__instance = super().__new__(cls, *args, **kwargs)
         return cls.__instance
 
-    def __cbor__(self, _encoder):
+    def __cbor__(self, encoder):
         yield b'\xf7'
 
 
@@ -98,8 +99,9 @@ class IndefiniteLengthByteString(IndefiniteLengthObject):
 
     def __cbor__(self, encoder):
         yield b'\x5f'
+        byte_string_parts = encoder.byte_string_parts
         for byte_string in self.generator:
-            yield from _byte_string_parts(byte_string, encoder)
+            yield from byte_string_parts(byte_string)
         yield b'\xff'
 
 
@@ -107,8 +109,9 @@ class IndefiniteLengthTextString(IndefiniteLengthObject):
 
     def __cbor__(self, encoder):
         yield b'\x7f'
+        text_string_parts = encoder.text_string_parts
         for text_string in self.generator:
-            yield from _text_string_parts(text_string, encoder)
+            yield from text_string_parts(text_string)
         yield b'\xff'
 
 
@@ -153,121 +156,6 @@ def _length_parts(length, major):
         raise OverflowError
 
 
-def _int_parts(value, encoder):
-    assert isinstance(value, int)
-    if value < 0:
-        value = -1 - value
-        major = 0x20
-    else:
-        major = 0x00
-    try:
-        yield from _length_parts(value, major)
-    except OverflowError:
-        bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
-        yield b'\xc3' if major else b'\xc2'
-        yield from _byte_string_parts(bignum_encoding, encoder)
-
-
-def _byte_string_parts(value, _encoder):
-    assert isinstance(value, (bytes, bytearray, memoryview))
-    yield from _length_parts(len(value), 0x40)
-    yield value
-
-
-def _text_string_parts(value, _encoder):
-    assert isinstance(value, str)
-    value_utf8 = value.encode()
-    yield from _length_parts(len(value_utf8), 0x60)
-    yield value_utf8
-
-
-def _list_parts(value, encoder):
-    assert isinstance(value, (tuple, list))
-    yield from _length_parts(len(value), 0x80)
-    generate_parts = encoder.generate_parts
-    for item in value:
-        yield from generate_parts(item)
-
-
-def _dict_parts(value, encoder):
-    assert isinstance(value, dict)
-    yield from _length_parts(len(value), 0xa0)
-    generate_parts = encoder.generate_parts
-    for key, kvalue in value.items():
-        yield from generate_parts(key)
-        yield from generate_parts(kvalue)
-
-
-def _bool_parts(value, _encoder):
-    assert isinstance(value, bool)
-    yield b'\xf5' if value else b'\xf4'
-
-
-def _None_parts(value, _encoder):
-    assert value is None
-    yield b'\xf6'
-
-
-def _float_parts(value, _encoder):
-    '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
-    assert isinstance(value, float)
-    if value == value:
-        try:
-            pack4 = pack_be_float4(value)
-            value4, = unpack_be_float4(pack4)
-            if value4 != value:
-                raise OverflowError
-        except OverflowError:
-            yield b'\xfb' + pack_be_float8(value)
-        else:
-            try:
-                pack2 = pack_be_float2(value)
-                value2, = unpack_be_float2(pack2)
-                if value2 != value:
-                    raise OverflowError
-                yield b'\xf9' + pack2
-            except OverflowError:
-                yield b'\xfa' + pack4
-    else:
-        yield b'\xf9\x7e\x00'
-
-
-def _tag_parts(tag_value, _encoder):
-    assert isinstance(tag_value, int)
-    assert 0 <= tag_value < 65536
-    yield from _length_parts(tag_value, 0xc0)
-
-
-def _datetime_parts(value, encoder):
-    assert isinstance(value, datetime)
-    options = encoder._options
-    if not value.tzinfo:
-        if options.tzinfo:
-            value = value.replace(tzinfo=options.tzinfo)
-        else:
-            raise CBOREncodingError('specify tzinfo option to encode a datetime without tzinfo')
-    if options.datetime_style == CBORDateTimeStyle.TIMESTAMP:
-        yield from _tag_parts(1, encoder)
-        value = value.timestamp()
-        int_value = int(value)
-        if int_value == value:
-            yield from _int_parts(int_value, encoder)
-        else:
-            yield from _float_parts(value, encoder)
-    else:
-        text = value.isoformat()
-        if options.datetime_style == CBORDateTimeStyle.ISO_WITH_Z:
-            text = text.replace('+00:00', 'Z')
-        yield from _tag_parts(0, encoder)
-        yield from _text_string_parts(text, encoder)
-
-
-def _date_parts(value, encoder):
-    assert isinstance(value, date)
-    yield from _tag_parts(0, encoder)
-    yield from _text_string_parts(value.isoformat(), encoder)
-
-
 class CBOREncoderOptions:
     '''Controls encoder behaviour.'''
 
@@ -282,40 +170,151 @@ default_encoder_options = CBOREncoderOptions()
 class CBOREncoder:
 
     def __init__(self, options=default_encoder_options):
-        self._encoder_map = {}
+        assert isinstance(default_encoder_options, CBOREncoderOptions)
+        self._parts_generators = {}
         self._options = options
 
     def _lookup_encoder(self, value):
         vtype = type(value)
-        result = _encoder_map_compact.get(vtype)
-        if not result:
-            result = getattr(vtype, '__cbor__', None)
-            if not result:
-                for kind, generate_parts in _encoder_map_compact.items():
+        gen_text = default_generators.get(vtype)
+        if gen_text:
+            generator = getattr(self, gen_text)
+        else:
+            generator = getattr(vtype, '__cbor__', None)
+            if generator:
+                generator = partial(generator, encoder=self)
+            else:
+                for kind, gen_text in default_generators.items():
                     if isinstance(value, kind):
-                        result = generate_parts
-                if not result:
+                        generator = getattr(self, gen_text)
+                        break
+                else:
                     raise CBOREncodingError(f'do not know how to encode object of type {vtype}')
-        self._encoder_map[vtype] = result
-        return result
+        self._parts_generators[vtype] = generator
+        return generator
+
+    def int_parts(self, value):
+        assert isinstance(value, int)
+        if value < 0:
+            value = -1 - value
+            major = 0x20
+        else:
+            major = 0x00
+        try:
+            yield from _length_parts(value, major)
+        except OverflowError:
+            bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
+            yield b'\xc3' if major else b'\xc2'
+            yield from self.byte_string_parts(bignum_encoding)
+
+    def byte_string_parts(self, value):
+        assert isinstance(value, (bytes, bytearray, memoryview))
+        yield from _length_parts(len(value), 0x40)
+        yield value
+
+    def text_string_parts(self, value):
+        assert isinstance(value, str)
+        value_utf8 = value.encode()
+        yield from _length_parts(len(value_utf8), 0x60)
+        yield value_utf8
+
+    def list_parts(self, value):
+        assert isinstance(value, (tuple, list))
+        yield from _length_parts(len(value), 0x80)
+        generate_parts = self.generate_parts
+        for item in value:
+            yield from generate_parts(item)
+
+    def dict_parts(self, value):
+        assert isinstance(value, dict)
+        yield from _length_parts(len(value), 0xa0)
+        generate_parts = self.generate_parts
+        for key, kvalue in value.items():
+            yield from generate_parts(key)
+            yield from generate_parts(kvalue)
+
+    def bool_parts(self, value):
+        assert isinstance(value, bool)
+        yield b'\xf5' if value else b'\xf4'
+
+    def None_parts(self, value):
+        assert value is None
+        yield b'\xf6'
+
+    def float_parts(self, value):
+        '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
+        assert isinstance(value, float)
+        if value == value:
+            try:
+                pack4 = pack_be_float4(value)
+                value4, = unpack_be_float4(pack4)
+                if value4 != value:
+                    raise OverflowError
+            except OverflowError:
+                yield b'\xfb' + pack_be_float8(value)
+            else:
+                try:
+                    pack2 = pack_be_float2(value)
+                    value2, = unpack_be_float2(pack2)
+                    if value2 != value:
+                        raise OverflowError
+                    yield b'\xf9' + pack2
+                except OverflowError:
+                    yield b'\xfa' + pack4
+        else:
+            yield b'\xf9\x7e\x00'
+
+    def tag_parts(self, value):
+        assert isinstance(value, int)
+        assert 0 <= value < 65536
+        yield from _length_parts(value, 0xc0)
+
+    def datetime_parts(self, value):
+        assert isinstance(value, datetime)
+        options = self._options
+        if not value.tzinfo:
+            if options.tzinfo:
+                value = value.replace(tzinfo=options.tzinfo)
+            else:
+                raise CBOREncodingError('specify tzinfo option to encode a datetime '
+                                        'without tzinfo')
+        if options.datetime_style == CBORDateTimeStyle.TIMESTAMP:
+            yield from self.tag_parts(1)
+            value = value.timestamp()
+            int_value = int(value)
+            if int_value == value:
+                yield from self.int_parts(int_value)
+            else:
+                yield from self.float_parts(value)
+        else:
+            text = value.isoformat()
+            if options.datetime_style == CBORDateTimeStyle.ISO_WITH_Z:
+                text = text.replace('+00:00', 'Z')
+            yield from self.tag_parts(0)
+            yield from self.text_string_parts(text)
+
+    def date_parts(self, value):
+        assert isinstance(value, date)
+        yield from self.tag_parts(0)
+        yield from self.text_string_parts(value.isoformat())
 
     def generate_parts(self, value):
-        parts_gen = self._encoder_map.get(type(value)) or self._lookup_encoder(value)
-        yield from parts_gen(value, self)
+        parts_gen = self._parts_generators.get(type(value)) or self._lookup_encoder(value)
+        yield from parts_gen(value)
 
     def encode(self, value):
         return b''.join(self.generate_parts(value))
 
 
-_encoder_map_compact = {
-    int: _int_parts,
-    (bytes, bytearray, memoryview): _byte_string_parts,
-    str: _text_string_parts,
-    (tuple, list): _list_parts,
-    dict: _dict_parts,
-    bool: _bool_parts,
-    type(None): _None_parts,
-    float: _float_parts,
-    datetime: _datetime_parts,
-    date: _date_parts,
+default_generators = {
+    int: 'int_parts',
+    (bytes, bytearray, memoryview): 'byte_string_parts',
+    str: 'text_string_parts',
+    (tuple, list): 'list_parts',
+    dict: 'dict_parts',
+    bool: 'bool_parts',
+    type(None): 'None_parts',
+    float: 'float_parts',
+    datetime: 'datetime_parts',
+    date: 'date_parts',
 }
