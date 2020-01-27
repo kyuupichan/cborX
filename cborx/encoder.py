@@ -41,7 +41,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types:  set, frozenset, array.array, undefined, simple types etc.
+# - types: array.array, simple types etc.
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
 
@@ -236,6 +236,11 @@ class CBOREncoder:
             yield from generate_parts(key)
             yield from generate_parts(kvalue)
 
+    def set_parts(self, value):
+        assert isinstance(value, (set, frozenset))
+        yield from self.tag_parts(258)
+        yield from self.list_parts(tuple(value))
+
     def bool_parts(self, value):
         assert isinstance(value, bool)
         yield b'\xf5' if value else b'\xf4'
@@ -360,6 +365,7 @@ default_generators = {
     bool: 'bool_parts',
     type(None): 'None_parts',
     float: 'float_parts',
+    (set, frozenset): 'set_parts',
     datetime: 'datetime_parts',
     date: 'date_parts',
     Decimal: 'decimal_parts',
