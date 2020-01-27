@@ -1,4 +1,5 @@
 import math
+from array import array
 from collections import namedtuple, defaultdict, Counter, OrderedDict
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
@@ -327,3 +328,35 @@ def test_default_enconder_options():
     options = CBOREncoderOptions()
     assert options.datetime_style == CBORDateTimeStyle.TIMESTAMP
     assert options.tzinfo is None
+
+
+@pytest.mark.parametrize('value, expected', [
+    (array('b', [-1, 1]), 'd84842ff01'),
+    (array('B', [3, 1]), 'd840420301'),
+    (array('h', [-400, 400]), 'd84d4470fe9001'),
+    (array('H', [1, 400]), 'd8454401009001'),
+    (array('i', [-70000, 400]), 'd84e4890eefeff90010000'),
+    (array('I', [1, 70000]), 'd846480100000070110100'),
+    (array('q', [-1, 1]), 'd84f50ffffffffffffffff0100000000000000'),
+    (array('Q', [1, 37]), 'd8475001000000000000002500000000000000'),
+    (array('f', [-1.5, 3.25]), 'd855480000c0bf00005040'),
+    (array('d', [-1.5, 3.25]), 'd85650000000000000f8bf0000000000000a40'),
+], ids = [
+    'b array', 'B array',
+    'h array', 'H array',
+    'i array', 'I array',
+    'q array', 'Q array',
+    'f array', 'd array',
+])
+def test_encodings(value, expected):
+    e = CBOREncoder()
+    result = e.encode(value).hex()
+    print(result)
+    assert result == expected
+
+
+def test_array_fail():
+    a = array('u', ['a'])
+    e = CBOREncoder()
+    with pytest.raises(CBOREncodingError):
+        e.encode(a)

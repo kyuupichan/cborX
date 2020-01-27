@@ -26,6 +26,7 @@
 '''CBOR encoding.'''
 
 import re
+from array import array
 from datetime import datetime, date
 from decimal import Decimal
 from enum import IntEnum
@@ -42,7 +43,8 @@ from cborx.types import CBORTag, CBOREncodingError
 
 # TODO:
 #
-# - types: array.array, simple types etc.
+# - types: simple types etc.
+# - canonical encoding
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
 
@@ -259,6 +261,14 @@ class CBOREncoder:
         # For some daft reason a dictionary was chosen over a list
         yield from self.dict_parts({value.network_address.packed: value.prefixlen})
 
+    def array_parts(self, value):
+        assert isinstance(value, array)
+        tag = array_typecode_tags.get(value.typecode)
+        if not tag:
+            raise CBOREncodingError(f'cannot encode arrays with typecode {value.typecode}')
+        yield from self.tag_parts(tag)
+        yield from self.byte_string_parts(value.tobytes())
+
     def generate_parts(self, value):
         parts_gen = self._parts_generators.get(type(value)) or self._lookup_encoder(value)
         yield from parts_gen(value)
@@ -269,7 +279,22 @@ class CBOREncoder:
         return b''.join(self.generate_parts(value))
 
 
+def _typecode_tag(typecode):
+    if typecode == 'f':
+        return 81 if array('f', [1]).tobytes() == pack_be_float4(1) else 85
+    if typecode == 'd':
+        return 82 if array('d', [1]).tobytes() == pack_be_float8(1) else 86
+    a = array(typecode, [1])
+    return (
+        63 + a.itemsize.bit_length() +
+        (4 if (a.tobytes()[0] == 1 and a.itemsize > 1) else 0) +
+        (8 if typecode.lower() == typecode else 0)
+    )
+
 regexp_type = type(re.compile(''))
+
+array_typecode_tags = {typecode: _typecode_tag(typecode) for typecode in 'bBhHiIlLqQfd'}
+
 default_generators = {
     int: 'int_parts',
     (bytes, bytearray, memoryview): 'byte_string_parts',
@@ -280,6 +305,7 @@ default_generators = {
     type(None): 'None_parts',
     float: 'float_parts',
     (set, frozenset): 'set_parts',
+    array: 'array_parts',
     datetime: 'datetime_parts',
     date: 'date_parts',
     Decimal: 'decimal_parts',
