@@ -74,7 +74,7 @@ class CBORTag:
         return (isinstance(other, CBORTag)
                 and self._tag == other._tag and self._value == other._value)
 
-    def __cbor__(self, encoder):
+    def __cbor_parts__(self, encoder):
         yield from _length_parts(self._tag, 0xc0)
         yield from encoder.generate_parts(self._value)
 
@@ -88,7 +88,7 @@ class CBORUndefined:
             cls.__instance = super().__new__(cls, *args, **kwargs)
         return cls.__instance
 
-    def __cbor__(self, encoder):
+    def __cbor_parts__(self, encoder):
         yield b'\xf7'
 
 
@@ -101,7 +101,7 @@ class CBORILObject:
 
 class CBORILByteString(CBORILObject):
 
-    def __cbor__(self, encoder):
+    def __cbor_parts__(self, encoder):
         yield b'\x5f'
         byte_string_parts = encoder.byte_string_parts
         for byte_string in self.generator:
@@ -111,7 +111,7 @@ class CBORILByteString(CBORILObject):
 
 class CBORILTextString(CBORILObject):
 
-    def __cbor__(self, encoder):
+    def __cbor_parts__(self, encoder):
         yield b'\x7f'
         text_string_parts = encoder.text_string_parts
         for text_string in self.generator:
@@ -121,7 +121,7 @@ class CBORILTextString(CBORILObject):
 
 class CBORILList(CBORILObject):
 
-    def __cbor__(self, encoder):
+    def __cbor_parts__(self, encoder):
         yield b'\x9f'
         generate_parts = encoder.generate_parts
         for item in self.generator:
@@ -131,7 +131,7 @@ class CBORILList(CBORILObject):
 
 class CBORILDict(CBORILObject):
 
-    def __cbor__(self, encoder):
+    def __cbor_parts__(self, encoder):
         yield b'\xbf'
         generate_parts = encoder.generate_parts
         for key, kvalue in self.generator:
@@ -184,7 +184,7 @@ class CBOREncoder:
         if gen_text:
             generator = getattr(self, gen_text)
         else:
-            generator = getattr(vtype, '__cbor__', None)
+            generator = getattr(vtype, '__cbor_parts__', None)
             if generator:
                 generator = partial(generator, encoder=self)
             else:
