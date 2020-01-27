@@ -351,7 +351,6 @@ def test_default_enconder_options():
 def test_encodings(value, expected):
     e = CBOREncoder()
     result = e.encode(value).hex()
-    print(result)
     assert result == expected
 
 
@@ -360,3 +359,24 @@ def test_array_fail():
     e = CBOREncoder()
     with pytest.raises(CBOREncodingError):
         e.encode(a)
+
+
+@pytest.mark.parametrize('value, expected', [
+    (CBORSimple(0), 'e0'),
+    (CBORSimple(22), 'f6'),
+    (CBORSimple(23), 'f7'),
+    (CBORSimple(31), 'ff'),
+    (CBORSimple(32), 'f820'),
+    (CBORSimple(255), 'f8ff'),
+])
+def test_simple(value, expected):
+    e = CBOREncoder()
+    result = e.encode(value).hex()
+    assert result == expected
+
+@pytest.mark.parametrize('value', [
+    -1, 24, 25, 26, 27, 28, 29, 30, 256,
+])
+def test_simple_fail(value):
+    with pytest.raises(ValueError):
+        CBORSimple(value)

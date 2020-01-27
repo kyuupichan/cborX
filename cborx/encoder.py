@@ -39,34 +39,13 @@ from cborx.packing import (
     pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
     pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
-from cborx.types import CBORTag, CBOREncodingError
+from cborx.types import CBORTag, CBOREncodingError, CBORSimple
 
 # TODO:
 #
-# - types: simple types etc.
 # - canonical encoding
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
-
-
-def _length_parts(length, major):
-    assert length >= 0
-    if length < 24:
-        yield pack_byte(major + length)
-    elif length < 256:
-        yield pack_byte(major + 24)
-        yield pack_byte(length)
-    elif length < 65536:
-        yield pack_byte(major + 25)
-        yield pack_be_uint16(length)
-    elif length < 4294967296:
-        yield pack_byte(major + 26)
-        yield pack_be_uint32(length)
-    elif length < 18446744073709551616:
-        yield pack_byte(major + 27)
-        yield pack_be_uint64(length)
-    else:
-        raise OverflowError
 
 
 class CBORDateTimeStyle(IntEnum):
@@ -112,6 +91,26 @@ class CBOREncoder:
         self._parts_generators[vtype] = generator
         return generator
 
+    @staticmethod
+    def length_parts(length, major):
+        assert length >= 0
+        if length < 24:
+            yield pack_byte(major + length)
+        elif length < 256:
+            yield pack_byte(major + 24)
+            yield pack_byte(length)
+        elif length < 65536:
+            yield pack_byte(major + 25)
+            yield pack_be_uint16(length)
+        elif length < 4294967296:
+            yield pack_byte(major + 26)
+            yield pack_be_uint32(length)
+        elif length < 18446744073709551616:
+            yield pack_byte(major + 27)
+            yield pack_be_uint64(length)
+        else:
+            raise OverflowError
+
     def int_parts(self, value):
         assert isinstance(value, int)
         if value < 0:
@@ -120,7 +119,7 @@ class CBOREncoder:
         else:
             major = 0x00
         try:
-            yield from _length_parts(value, major)
+            yield from self.length_parts(value, major)
         except OverflowError:
             bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
             yield b'\xc3' if major else b'\xc2'
@@ -128,25 +127,25 @@ class CBOREncoder:
 
     def byte_string_parts(self, value):
         assert isinstance(value, (bytes, bytearray, memoryview))
-        yield from _length_parts(len(value), 0x40)
+        yield from self.length_parts(len(value), 0x40)
         yield value
 
     def text_string_parts(self, value):
         assert isinstance(value, str)
         value_utf8 = value.encode()
-        yield from _length_parts(len(value_utf8), 0x60)
+        yield from self.length_parts(len(value_utf8), 0x60)
         yield value_utf8
 
     def list_parts(self, value):
         assert isinstance(value, (tuple, list))
-        yield from _length_parts(len(value), 0x80)
+        yield from self.length_parts(len(value), 0x80)
         generate_parts = self.generate_parts
         for item in value:
             yield from generate_parts(item)
 
     def dict_parts(self, value):
         assert isinstance(value, dict)
-        yield from _length_parts(len(value), 0xa0)
+        yield from self.length_parts(len(value), 0xa0)
         generate_parts = self.generate_parts
         for key, kvalue in value.items():
             yield from generate_parts(key)
@@ -191,7 +190,7 @@ class CBOREncoder:
     def tag_parts(self, value):
         assert isinstance(value, int)
         assert 0 <= value < 65536
-        yield from _length_parts(value, 0xc0)
+        yield from self.length_parts(value, 0xc0)
 
     def datetime_parts(self, value):
         assert isinstance(value, datetime)

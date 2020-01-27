@@ -26,6 +26,9 @@
 '''CBOR classes.'''
 
 
+from cborx.packing import pack_byte
+
+
 class CBORError(Exception):
     pass
 
@@ -51,6 +54,22 @@ class CBORTag:
     def __cbor_parts__(self, encoder):
         yield from _length_parts(self._tag, 0xc0)
         yield from encoder.generate_parts(self._value)
+
+
+class CBORSimple:
+
+    def __init__(self, value):
+        if not isinstance(value, int):
+            raise TypeError(f'simple value {value} must be an integer')
+        if not 0 <= value < 256 or (24 <= value < 31):
+            raise ValueError(f'simple value {value} out of range')
+        self._value = value
+
+    def __cbor_parts__(self, encoder):
+        if self._value <= 31:
+            yield pack_byte(0xe0 + self._value)
+        else:
+            yield b'\xf8' + pack_byte(self._value)
 
 
 class CBORUndefined:
