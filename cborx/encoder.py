@@ -25,7 +25,7 @@
 
 '''CBOR encoding.'''
 
-from datetime import datetime
+from datetime import datetime, date
 from enum import IntEnum
 
 from cborx.packing import (
@@ -35,7 +35,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  mmap, decimal, datetime, regexp, fractions, mime, uuid,
+# - types  mmap, decimal, regexp, fractions, mime, uuid,
 #          ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array, undefined, simple types etc.
 # - recursive objects
@@ -262,6 +262,12 @@ def _datetime_parts(value, encoder):
         yield from _text_string_parts(text, encoder)
 
 
+def _date_parts(value, encoder):
+    assert isinstance(value, date)
+    yield from _tag_parts(0, encoder)
+    yield from _text_string_parts(value.isoformat(), encoder)
+
+
 class CBOREncoderOptions:
     '''Controls encoder behaviour.'''
 
@@ -311,4 +317,5 @@ _encoder_map_compact = {
     type(None): _None_parts,
     float: _float_parts,
     datetime: _datetime_parts,
+    date: _date_parts,
 }

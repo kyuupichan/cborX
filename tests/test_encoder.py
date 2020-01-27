@@ -1,6 +1,6 @@
 import math
 from collections import namedtuple, defaultdict, Counter, OrderedDict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 
 import pytest
 
@@ -249,6 +249,16 @@ def test_datetime_enoder_tzinfo(value, style, expected):
     with pytest.raises(CBOREncodingError):
         e.encode(value)
     e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style, tzinfo=timezone.utc))
+    result = e.encode(value)
+    assert result == bytes.fromhex(expected)
+
+
+@pytest.mark.parametrize('value, expected', [
+    (date(2013, 3, 21), 'c06a323031332d30332d3231'),
+    (date(1900, 2, 28), 'c06a313930302d30322d3238'),
+])
+def test_date(value, expected):
+    e = CBOREncoder()
     result = e.encode(value)
     assert result == bytes.fromhex(expected)
 
