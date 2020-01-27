@@ -1,6 +1,5 @@
 from cborx.encoder import (
     CBOREncoder, CBOREncoderOptions, CBORDateTimeStyle, CBOREncodingError,
-    UndefinedObject,
-    IndefiniteLengthByteString, IndefiniteLengthTextString, IndefiniteLengthList,
-    IndefiniteLengthDict
+    CBORUndefined,
+    CBORILObject, CBORILByteString, CBORILTextString, CBORILList, CBORILDict,
 )

@@ -79,7 +79,7 @@ class CBORTag:
         yield from encoder.generate_parts(self._value)
 
 
-class UndefinedObject:
+class CBORUndefined:
 
     __instance = None
 
@@ -92,13 +92,14 @@ class UndefinedObject:
         yield b'\xf7'
 
 
-class IndefiniteLengthObject:
+class CBORILObject:
+    '''Base class of indefinite-length objects.'''
 
     def __init__(self, generator):
         self.generator = generator
 
 
-class IndefiniteLengthByteString(IndefiniteLengthObject):
+class CBORILByteString(CBORILObject):
 
     def __cbor__(self, encoder):
         yield b'\x5f'
@@ -108,7 +109,7 @@ class IndefiniteLengthByteString(IndefiniteLengthObject):
         yield b'\xff'
 
 
-class IndefiniteLengthTextString(IndefiniteLengthObject):
+class CBORILTextString(CBORILObject):
 
     def __cbor__(self, encoder):
         yield b'\x7f'
@@ -118,7 +119,7 @@ class IndefiniteLengthTextString(IndefiniteLengthObject):
         yield b'\xff'
 
 
-class IndefiniteLengthList(IndefiniteLengthObject):
+class CBORILList(CBORILObject):
 
     def __cbor__(self, encoder):
         yield b'\x9f'
@@ -128,7 +129,7 @@ class IndefiniteLengthList(IndefiniteLengthObject):
         yield b'\xff'
 
 
-class IndefiniteLengthDict(IndefiniteLengthObject):
+class CBORILDict(CBORILObject):
 
     def __cbor__(self, encoder):
         yield b'\xbf'

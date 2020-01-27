@@ -138,31 +138,31 @@ def _indefinite_dict():
 
 
 @pytest.mark.parametrize("value, encoding", (
-    (IndefiniteLengthByteString(iter(())), bytes.fromhex('5fff')),
-    (IndefiniteLengthByteString(_indefinite_bytes()), bytes.fromhex('5f42010243030405420607ff')),
-    (IndefiniteLengthTextString(iter(())), bytes.fromhex('7fff')),
-    (IndefiniteLengthTextString(_indefinite_string()), bytes.fromhex('7f657374726561646d696e67ff')),
-    (IndefiniteLengthList(iter(())), bytes.fromhex('9fff')),
-    (IndefiniteLengthList(iter((1, [2, 3], IndefiniteLengthList(iter([4, 5]))))),
+    (CBORILByteString(iter(())), bytes.fromhex('5fff')),
+    (CBORILByteString(_indefinite_bytes()), bytes.fromhex('5f42010243030405420607ff')),
+    (CBORILTextString(iter(())), bytes.fromhex('7fff')),
+    (CBORILTextString(_indefinite_string()), bytes.fromhex('7f657374726561646d696e67ff')),
+    (CBORILList(iter(())), bytes.fromhex('9fff')),
+    (CBORILList(iter((1, [2, 3], CBORILList(iter([4, 5]))))),
      bytes.fromhex('9f018202039f0405ffff')),
-    (IndefiniteLengthList(iter([1, [2, 3], [4, 5]])),
+    (CBORILList(iter([1, [2, 3], [4, 5]])),
      bytes.fromhex('9f01820203820405ff')),
-    ([1, [2, 3], IndefiniteLengthList(iter([4,5]))],
+    ([1, [2, 3], CBORILList(iter([4,5]))],
      bytes.fromhex('83018202039f0405ff')),
-    ([1, IndefiniteLengthList(iter([2, 3])), [4, 5]],
+    ([1, CBORILList(iter([2, 3])), [4, 5]],
      bytes.fromhex('83019f0203ff820405')),
-    (IndefiniteLengthList(range(1, 26)),
+    (CBORILList(range(1, 26)),
      bytes.fromhex('9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff')),
-    (IndefiniteLengthDict(iter(())), bytes.fromhex('bfff')),
-    (IndefiniteLengthDict(iter([('a', 1), ('b', IndefiniteLengthList(iter([2, 3])))])),
+    (CBORILDict(iter(())), bytes.fromhex('bfff')),
+    (CBORILDict(iter([('a', 1), ('b', CBORILList(iter([2, 3])))])),
      bytes.fromhex('bf61610161629f0203ffff')),
-    (IndefiniteLengthDict(_indefinite_dict()),
+    (CBORILDict(_indefinite_dict()),
      bytes.fromhex('bf01616143666f6f03ff')),
-    (["a", IndefiniteLengthDict(iter([('b', 'c')]))],
+    (["a", CBORILDict(iter([('b', 'c')]))],
      bytes.fromhex('826161bf61626163ff')),
-    (IndefiniteLengthDict(iter([('Fun', True), ('Amt', -2)])),
+    (CBORILDict(iter([('Fun', True), ('Amt', -2)])),
      bytes.fromhex('bf6346756ef563416d7421ff')),
-    (UndefinedObject(), b'\xf7'),
+    (CBORUndefined(), b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
     e = CBOREncoder()
@@ -170,7 +170,7 @@ def test_encode_indefinite_length(value, encoding):
 
 
 def test_undefined_singleton():
-    assert UndefinedObject() is UndefinedObject()
+    assert CBORUndefined() is CBORUndefined()
 
 
 def test_namedtuple():
