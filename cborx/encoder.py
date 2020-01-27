@@ -29,6 +29,7 @@ import re
 from datetime import datetime, date
 from decimal import Decimal
 from enum import IntEnum
+from fractions import Fraction
 from functools import partial
 from uuid import UUID
 
@@ -39,7 +40,7 @@ from cborx.packing import (
 
 # TODO:
 #
-# - types  fractions, ipv4, ipv6, ipv4network, ipv6network,
+# - types  ipv4, ipv6, ipv4network, ipv6network,
 #          set, frozenset, array.array, undefined, simple types etc.
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
@@ -313,6 +314,11 @@ class CBOREncoder:
         else:
             yield from self.float_parts(float(value))
 
+    def fraction_parts(self, value):
+        assert isinstance(value, Fraction)
+        yield from self.tag_parts(30)
+        yield from self.list_parts((value.numerator, value.denominator))
+
     def regexp_parts(self, value):
         assert isinstance(value, regexp_type)
         yield from self.tag_parts(35)
@@ -350,4 +356,5 @@ default_generators = {
     Decimal: 'decimal_parts',
     regexp_type: 'regexp_parts',
     UUID: 'uuid_parts',
+    Fraction: 'fraction_parts',
 }

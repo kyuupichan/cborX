@@ -2,6 +2,7 @@ import math
 from collections import namedtuple, defaultdict, Counter, OrderedDict
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
+from fractions import Fraction
 from uuid import UUID
 import re
 
@@ -291,10 +292,14 @@ def test_date(value, expected):
     (re.compile('[0-9]+"'), 'd823675b302d395d2b22'),
     (re.compile('hello (world)'), 'd8236d68656c6c6f2028776f726c6429'),
     (UUID(hex='5eaffac8b51e480581277fdcc7842faf'), 'd825505eaffac8b51e480581277fdcc7842faf'),
+    (Fraction(2, 5), 'd81e820205'),
+    (Fraction(-3, 5), 'd81e822205'),
+    (Fraction(-8, -14), 'd81e820407'),
 ])
 def test_encodings(value, expected):
     e = CBOREncoder()
     result = e.encode(value)
+    print(result.hex())
     assert result == bytes.fromhex(expected)
 
 
