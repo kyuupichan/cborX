@@ -38,10 +38,9 @@ from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 
 from cborx.packing import (
-    pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64,
-    pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
+    pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
-from cborx.types import CBORTag, CBOREncodingError, CBORSimple
+from cborx.types import CBORTag, CBOREncodingError, CBORSimple, encode_length
 
 # TODO:
 #
@@ -86,7 +85,7 @@ def sorted_items(encoded_items_gen, method):
     elif method == CBORSortMethod.LENGTH_FIRST:
         return sorted(encoded_items_gen, key=lambda item: (len(item), item))
     else:
-        return encoded_items_gen
+        return list(encoded_items_gen)
 
 
 class CBOREncoderOptions:
@@ -120,66 +119,44 @@ class CBOREncoder:
 
     def __init__(self, options=default_encoder_options):
         assert isinstance(default_encoder_options, CBOREncoderOptions)
-        self._parts_generators = {}
+        self._encode_funcs = {}
         self._options = options
         self._shared_id = itertools.count()
         self._shared_ids = {}
 
-    def _shared_parts_generator(self, generator, value):
+    def _encode_shared(self, encode_func, value):
         value_id = id(value)
         value_ref = self._shared_ids.get(value_id)
         if value_ref is None:
             self._shared_ids[value_id] = next(self._shared_id)
-            yield from self.tag_parts(28)
-            yield from generator(value)
+            return self.encode_tag(28) + encode_func(value)
         else:
-            yield from self.tag_parts(29)
-            yield from self.int_parts(value_ref)
+            return self.encode_tag(29) + self.encode_int(value_ref)
 
-    def _parts_generator(self, vtype):
+    def _encode_func(self, vtype):
         used_type = vtype
-        gen_text = default_generators.get(vtype)
-        if gen_text:
-            generator = getattr(self, gen_text)
+        func_text = default_encode_funcs.get(vtype)
+        if func_text:
+            encode_func = getattr(self, func_text)
         else:
-            generator = getattr(vtype, '__cbor_parts__', None)
-            if generator:
-                generator = partial(generator, encoder=self)
+            encode_func = getattr(vtype, '__encode_cbor__', None)
+            if encode_func:
+                encode_func = partial(encode_func, encoder=self)
             else:
                 # Check for subclasses
-                for kind, gen_text in default_generators.items():
+                for kind, func_text in default_encode_funcs.items():
                     if issubclass(vtype, kind):
                         used_type = kind
-                        generator = getattr(self, gen_text)
+                        encode_func = getattr(self, func_text)
                         break
                 else:
                     raise CBOREncodingError(f'do not know how to encode object of type {vtype}')
         if used_type in self._options.shared_types:
-            generator = partial(self._shared_parts_generator, generator)
-        self._parts_generators[vtype] = generator
-        return generator
+            encode_func = partial(self._encode_shared, encode_func)
+        self._encode_funcs[vtype] = encode_func
+        return encode_func
 
-    @staticmethod
-    def length_parts(length, major):
-        assert length >= 0
-        if length < 24:
-            yield pack_byte(major + length)
-        elif length < 256:
-            yield pack_byte(major + 24)
-            yield pack_byte(length)
-        elif length < 65536:
-            yield pack_byte(major + 25)
-            yield pack_be_uint16(length)
-        elif length < 4294967296:
-            yield pack_byte(major + 26)
-            yield pack_be_uint32(length)
-        elif length < 18446744073709551616:
-            yield pack_byte(major + 27)
-            yield pack_be_uint64(length)
-        else:
-            raise OverflowError
-
-    def int_parts(self, value):
+    def encode_int(self, value):
         assert isinstance(value, int)
         if value < 0:
             value = -1 - value
@@ -187,79 +164,73 @@ class CBOREncoder:
         else:
             major = 0x00
         try:
-            yield from self.length_parts(value, major)
+            return encode_length(value, major)
         except OverflowError:
             bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
-            yield b'\xc3' if major else b'\xc2'
-            yield from self.byte_string_parts(bignum_encoding)
+            return (b'\xc3' if major else b'\xc2') + self.encode_byte_string(bignum_encoding)
 
-    def byte_string_parts(self, value):
+    def encode_byte_string(self, value):
         assert isinstance(value, (bytes, bytearray, memoryview))
-        yield from self.length_parts(len(value), 0x40)
-        yield value
+        return encode_length(len(value), 0x40) + value
 
-    def text_string_parts(self, value):
+    def encode_text_string(self, value):
         assert isinstance(value, str)
         value_utf8 = value.encode()
-        yield from self.length_parts(len(value_utf8), 0x60)
-        yield value_utf8
+        return encode_length(len(value_utf8), 0x60) + value_utf8
 
-    def ordered_list_parts(self, value):
+    def encode_ordered_list(self, value):
         assert isinstance(value, (tuple, list))
-        yield from self.length_parts(len(value), 0x80)
-        generate_parts = self.generate_parts
-        yield from (bjoin(generate_parts(item)) for item in value)
+        encode_item = self.encode_item
+        return encode_length(len(value), 0x80) + bjoin(encode_item(item) for item in value)
 
-    def sorted_list_parts(self, value):
+    def encode_sorted_list(self, value):
         assert isinstance(value, (tuple, list))
-        yield from self.length_parts(len(value), 0x80)
-        generate_parts = self.generate_parts
-        encoded_items_gen = (bjoin(generate_parts(item)) for item in value)
-        yield from sorted_items(encoded_items_gen, self._options.sort_method)
+        length = encode_length(len(value), 0x80)
+        encode_item = self.encode_item
+        encoded_items_gen = (encode_item(item) for item in value)
+        return length + bjoin(sorted_items(encoded_items_gen, self._options.sort_method))
 
-    def _sorted_dict_parts(self, kv_pairs, sort_method):
-        generate_parts = self.generate_parts
-        pairs_gen = ((bjoin(generate_parts(key)), value) for key, value in kv_pairs)
-        yield from self.length_parts(len(kv_pairs), 0xa0)
-        for encoded_key, value in sorted_pairs(pairs_gen, sort_method):
-            yield encoded_key
-            yield from generate_parts(value)
+    def encode_sorted_dict(self, kv_pairs, sort_method):
+        encode_item = self.encode_item
+        pairs_gen = ((encode_item(key), value) for key, value in kv_pairs)
+        length = encode_length(len(kv_pairs), 0xa0)
+        return length + bjoin(encoded_key + encode_item(value)
+                              for encoded_key, value in sorted_pairs(pairs_gen, sort_method))
 
-    def dict_parts(self, value):
+    def encode_dict(self, value):
         assert isinstance(value, dict)
-        yield from self._sorted_dict_parts(value.items(), self._options.sort_method)
+        return self.encode_sorted_dict(value.items(), self._options.sort_method)
 
-    def ordered_dict_parts(self, value):
+    def encode_ordered_dict(self, value):
         assert isinstance(value, OrderedDict)
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
-        yield from self.tag_parts(272)
-        yield from self._sorted_dict_parts(value.items(), CBORSortMethod.UNSORTED)
+        return self.encode_tag(272) + self.encode_sorted_dict(
+            value.items(), CBORSortMethod.UNSORTED)
 
-    def set_parts(self, value):
+    def encode_set(self, value):
         assert isinstance(value, (set, frozenset))
-        yield from self.tag_parts(258)
-        yield from self.sorted_list_parts(tuple(value))
+        return self.encode_tag(258) + self.encode_sorted_list(tuple(value))
 
-    def bool_parts(self, value):
-        assert isinstance(value, bool)
-        yield b'\xf5' if value else b'\xf4'
+    def encode_bool(self, value):
+        #assert isinstance(value, bool)
+        return b'\xf5' if value else b'\xf4'
 
-    def None_parts(self, value):
+    def encode_None(self, value):
         assert value is None
-        yield b'\xf6'
+        return b'\xf6'
 
-    def float_parts(self, value):
+    def encode_float(self, value):
         '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
         if self._options.float_style == CBORFloatStyle.SHORTEST:
-            yield from self.shortest_float_parts(value)
+            return self.encode_shortest_float(value)
         else:
-            yield from self.double_float_parts(value)
+            return self.encode_double_float(value)
 
-    def double_float_parts(self, value):
+    def encode_double_float(self, value):
         assert isinstance(value, float)
-        yield b'\xfb' + pack_be_float8(value)
+        return b'\xfb' + pack_be_float8(value)
 
-    def shortest_float_parts(self, value):
+    def encode_shortest_float(self, value):
         assert isinstance(value, float)
         if value == value:
             try:
@@ -268,25 +239,25 @@ class CBOREncoder:
                 if value4 != value:
                     raise OverflowError
             except OverflowError:
-                yield b'\xfb' + pack_be_float8(value)
+                return b'\xfb' + pack_be_float8(value)
             else:
                 try:
                     pack2 = pack_be_float2(value)
                     value2, = unpack_be_float2(pack2)
                     if value2 != value:
                         raise OverflowError
-                    yield b'\xf9' + pack2
+                    return b'\xf9' + pack2
                 except OverflowError:
-                    yield b'\xfa' + pack4
+                    return b'\xfa' + pack4
         else:
-            yield b'\xf9\x7e\x00'
+            return b'\xf9\x7e\x00'
 
-    def tag_parts(self, value):
+    def encode_tag(self, value):
         assert isinstance(value, int)
         assert 0 <= value < 65536
-        yield from self.length_parts(value, 0xc0)
+        return encode_length(value, 0xc0)
 
-    def datetime_parts(self, value):
+    def encode_datetime(self, value):
         assert isinstance(value, datetime)
         options = self._options
         if not value.tzinfo:
@@ -296,26 +267,24 @@ class CBOREncoder:
                 raise CBOREncodingError('specify tzinfo option to encode a datetime '
                                         'without tzinfo')
         if options.datetime_style == CBORDateTimeStyle.TIMESTAMP:
-            yield from self.tag_parts(1)
+            tag = self.encode_tag(1)
             value = value.timestamp()
             int_value = int(value)
             if int_value == value:
-                yield from self.int_parts(int_value)
+                return tag + self.encode_int(int_value)
             else:
-                yield from self.float_parts(value)
+                return tag + self.encode_float(value)
         else:
             text = value.isoformat()
             if options.datetime_style == CBORDateTimeStyle.ISO_WITH_Z:
                 text = text.replace('+00:00', 'Z')
-            yield from self.tag_parts(0)
-            yield from self.text_string_parts(text)
+            return self.encode_tag(0) + self.encode_text_string(text)
 
-    def date_parts(self, value):
+    def encode_date(self, value):
         assert isinstance(value, date)
-        yield from self.tag_parts(0)
-        yield from self.text_string_parts(value.isoformat())
+        return self.encode_tag(0) + self.encode_text_string(value.isoformat())
 
-    def decimal_parts(self, value):
+    def encode_decimal(self, value):
         assert isinstance(value, Decimal)
         dt = value.as_tuple()
         # Is this decimal finite?
@@ -323,55 +292,48 @@ class CBOREncoder:
             mantissa = int(''.join(str(digit) for digit in dt.digits))
             if dt.sign:
                 mantissa = -mantissa
-            yield from self.tag_parts(4)
-            yield from self.ordered_list_parts((dt.exponent, mantissa))
+            return self.encode_tag(4) + self.encode_ordered_list((dt.exponent, mantissa))
         else:
-            yield from self.float_parts(float(value))
+            return self.encode_float(float(value))
 
-    def fraction_parts(self, value):
+    def encode_fraction(self, value):
         assert isinstance(value, Fraction)
-        yield from self.tag_parts(30)
-        yield from self.ordered_list_parts((value.numerator, value.denominator))
+        return self.encode_tag(30) + self.encode_ordered_list((value.numerator, value.denominator))
 
-    def regexp_parts(self, value):
+    def encode_regexp(self, value):
         assert isinstance(value, regexp_type)
-        yield from self.tag_parts(35)
-        yield from self.text_string_parts(value.pattern)
+        return self.encode_tag(35) + self.encode_text_string(value.pattern)
 
-    def uuid_parts(self, value):
+    def encode_uuid(self, value):
         assert isinstance(value, UUID)
-        yield from self.tag_parts(37)
-        yield from self.byte_string_parts(value.bytes)
+        return self.encode_tag(37) + self.encode_byte_string(value.bytes)
 
-    def ip_address_parts(self, value):
+    def encode_ip_address(self, value):
         assert isinstance(value, (IPv4Address, IPv6Address))
-        yield from self.tag_parts(260)
-        yield from self.byte_string_parts(value.packed)
+        return self.encode_tag(260) + self.encode_byte_string(value.packed)
 
-    def ip_network_parts(self, value):
+    def encode_ip_network(self, value):
         assert isinstance(value, (IPv4Network, IPv6Network))
-        yield from self.tag_parts(261)
         # For some daft reason a one-element dictionary was chosen over a pair
         pairs = [(value.network_address.packed, value.prefixlen)]
-        yield from self._sorted_dict_parts(pairs)
+        return self.encode_tag(261) + self.encode_sorted_dict(pairs)
 
-    def array_parts(self, value):
+    def encode_array(self, value):
         assert isinstance(value, array)
         tag = array_typecode_tags.get(value.typecode)
         if not tag:
             raise CBOREncodingError(f'cannot encode arrays with typecode {value.typecode}')
-        yield from self.tag_parts(tag)
-        yield from self.byte_string_parts(value.tobytes())
+        return self.encode_tag(tag) + self.encode_byte_string(value.tobytes())
 
-    def generate_parts(self, value):
-        parts_gen = self._parts_generators.get(type(value)) or self._parts_generator(type(value))
-        yield from parts_gen(value)
+    def encode_item(self, value):
+        encode_func = self._encode_funcs.get(value.__class__) or self._encode_func(value.__class__)
+        return encode_func(value)
 
-    # Main external APIs
+    # External APIs
 
     def encode(self, value):
         try:
-            return b''.join(self.generate_parts(value))
+            return self.encode_item(value)
         except RecursionError:
             raise CBOREncodingError('self-referential object detected') from None
 
@@ -392,30 +354,30 @@ regexp_type = type(re.compile(''))
 
 array_typecode_tags = {typecode: _typecode_tag(typecode) for typecode in 'bBhHiIlLqQfd'}
 
-default_generators = {
-    int: 'int_parts',
-    bytes: 'byte_string_parts',
-    bytearray: 'byte_string_parts',
-    memoryview: 'byte_string_parts',
-    str: 'text_string_parts',
-    tuple: 'ordered_list_parts',
-    list: 'ordered_list_parts',
-    dict: 'dict_parts',
-    bool: 'bool_parts',
-    type(None): 'None_parts',
-    float: 'float_parts',
-    set: 'set_parts',
-    frozenset: 'set_parts',
-    OrderedDict: 'ordered_dict_parts',
-    array: 'array_parts',
-    datetime: 'datetime_parts',
-    date: 'date_parts',
-    Decimal: 'decimal_parts',
-    regexp_type: 'regexp_parts',
-    UUID: 'uuid_parts',
-    Fraction: 'fraction_parts',
-    IPv4Address: 'ip_address_parts',
-    IPv6Address: 'ip_address_parts',
-    IPv4Network: 'ip_network_parts',
-    IPv6Network: 'ip_network_parts',
+default_encode_funcs = {
+    int: 'encode_int',
+    bytes: 'encode_byte_string',
+    bytearray: 'encode_byte_string',
+    memoryview: 'encode_byte_string',
+    str: 'encode_text_string',
+    tuple: 'encode_ordered_list',
+    list: 'encode_ordered_list',
+    dict: 'encode_dict',
+    bool: 'encode_bool',
+    type(None): 'encode_None',
+    float: 'encode_float',
+    set: 'encode_set',
+    frozenset: 'encode_set',
+    OrderedDict: 'encode_ordered_dict',
+    array: 'encode_array',
+    datetime: 'encode_datetime',
+    date: 'encode_date',
+    Decimal: 'encode_decimal',
+    regexp_type: 'encode_regexp',
+    UUID: 'encode_uuid',
+    Fraction: 'encode_fraction',
+    IPv4Address: 'encode_ip_address',
+    IPv6Address: 'encode_ip_address',
+    IPv4Network: 'encode_ip_network',
+    IPv6Network: 'encode_ip_network',
 }

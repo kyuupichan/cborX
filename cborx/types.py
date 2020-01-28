@@ -26,7 +26,10 @@
 '''CBOR classes.'''
 
 
-from cborx.packing import pack_byte
+from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
+
+bjoin = b''.join
+sjoin = ''.join
 
 
 class CBORError(Exception):
@@ -51,9 +54,8 @@ class CBORTag:
         return (isinstance(other, CBORTag)
                 and self._tag == other._tag and self._value == other._value)
 
-    def __cbor_parts__(self, encoder):
-        yield from _length_parts(self._tag, 0xc0)
-        yield from encoder.generate_parts(self._value)
+    def __encode_cbor__(self, encoder):
+        return encode_length(self._tag, 0xc0) + encoder.encode_item(self._value)
 
 
 class CBORSimple:
@@ -65,11 +67,11 @@ class CBORSimple:
             raise ValueError(f'simple value {value} out of range')
         self._value = value
 
-    def __cbor_parts__(self, encoder):
+    def __encode_cbor__(self, encoder):
         if self._value <= 31:
-            yield pack_byte(0xe0 + self._value)
+            return pack_byte(0xe0 + self._value)
         else:
-            yield b'\xf8' + pack_byte(self._value)
+            return b'\xf8' + pack_byte(self._value)
 
 
 class CBORUndefined:
@@ -81,8 +83,8 @@ class CBORUndefined:
             cls.__instance = super().__new__(cls, *args, **kwargs)
         return cls.__instance
 
-    def __cbor_parts__(self, encoder):
-        yield b'\xf7'
+    def __encode_cbor__(self, encoder):
+        return b'\xf7'
 
 
 class CBORILObject:
@@ -94,53 +96,60 @@ class CBORILObject:
 
 class CBORILByteString(CBORILObject):
 
-    def __cbor_parts__(self, encoder):
-        byte_string_parts = encoder.byte_string_parts
+    def __encode_cbor__(self, encoder):
+        encode_byte_string = encoder.encode_byte_string
         if encoder._options.realize_il:
-            yield from byte_string_parts(b''.join(self.generator))
+            return encode_byte_string(bjoin(self.generator))
         else:
-            yield b'\x5f'
-            for byte_string in self.generator:
-                yield from byte_string_parts(byte_string)
-            yield b'\xff'
+            parts = (encode_byte_string(byte_string) for byte_string in self.generator)
+            return b'\x5f' + bjoin(parts) + b'\xff'
 
 
 class CBORILTextString(CBORILObject):
 
-    def __cbor_parts__(self, encoder):
-        text_string_parts = encoder.text_string_parts
+    def __encode_cbor__(self, encoder):
+        encode_text_string = encoder.encode_text_string
         if encoder._options.realize_il:
-            yield from text_string_parts(''.join(self.generator))
+            return encode_text_string(sjoin(self.generator))
         else:
-            yield b'\x7f'
-            for text_string in self.generator:
-                yield from text_string_parts(text_string)
-            yield b'\xff'
+            parts = (encode_text_string(text_string) for text_string in self.generator)
+            return b'\x7f' + bjoin(parts) + b'\xff'
 
 
 class CBORILList(CBORILObject):
 
-    def __cbor_parts__(self, encoder):
+    def __encode_cbor__(self, encoder):
         if encoder._options.realize_il:
-            yield from encoder.sorted_list_parts(tuple(self.generator))
+            return encoder.encode_sorted_list(tuple(self.generator))
         else:
-            yield b'\x9f'
-            generate_parts = encoder.generate_parts
-            for item in self.generator:
-                yield from generate_parts(item)
-            yield b'\xff'
+            encode_item = encoder.encode_item
+            parts = (encode_item(item) for item in self.generator)
+            return b'\x9f' + bjoin(parts) + b'\xff'
 
 
 class CBORILDict(CBORILObject):
 
-    def __cbor_parts__(self, encoder):
+    def __encode_cbor__(self, encoder):
         if encoder._options.realize_il:
-            yield from encoder._sorted_dict_parts(tuple(self.generator),
-                                                  encoder._options.sort_method)
+            return encoder.encode_sorted_dict(tuple(self.generator),
+                                              encoder._options.sort_method)
         else:
-            generate_parts = encoder.generate_parts
-            yield b'\xbf'
-            for key, kvalue in self.generator:
-                yield from generate_parts(key)
-                yield from generate_parts(kvalue)
-            yield b'\xff'
+            encode_item = encoder.encode_item
+            parts = (encode_item(key) + encode_item(kvalue) for key, kvalue in self.generator)
+            return b'\xbf' + bjoin(parts) + b'\xff'
+
+
+def encode_length(length, major):
+    # assert length >= 0
+    if length < 24:
+        return pack_byte(major + length)
+    elif length < 256:
+        return pack_byte(major + 24) + pack_byte(length)
+    elif length < 65536:
+        return pack_byte(major + 25) + pack_be_uint16(length)
+    elif length < 4294967296:
+        return pack_byte(major + 26) + pack_be_uint32(length)
+    elif length < 18446744073709551616:
+        return pack_byte(major + 27) + pack_be_uint64(length)
+    else:
+        raise OverflowError
