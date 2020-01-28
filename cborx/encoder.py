@@ -25,6 +25,7 @@
 
 '''CBOR encoding.'''
 
+import itertools
 import re
 from array import array
 from collections import OrderedDict
@@ -44,7 +45,6 @@ from cborx.types import CBORTag, CBOREncodingError, CBORSimple
 
 # TODO:
 #
-# - recursive objects and value sharing
 # - encoder customization
 # - embedded CBOR data item
 # - streaming API
@@ -92,15 +92,18 @@ def sorted_items(encoded_items_gen, method):
 class CBOREncoderOptions:
     '''Controls encoder behaviour.'''
 
+    SHARED_TYPES = {tuple, list, dict, OrderedDict}
+
     def __init__(self, *, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
                  float_style = CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
-                 realize_il=True):
+                 realize_il=True, shared_types=()):
         # In Python bignums and integers are indistinguishable
         self.tzinfo = tzinfo
         self.datetime_style = datetime_style
         self.float_style = float_style
         self.sort_method = sort_method
         self.realize_il = realize_il
+        self.shared_types = shared_types
 
     @classmethod
     def deterministic(cls, **kwargs):
@@ -119,9 +122,22 @@ class CBOREncoder:
         assert isinstance(default_encoder_options, CBOREncoderOptions)
         self._parts_generators = {}
         self._options = options
+        self._shared_id = itertools.count()
+        self._shared_ids = {}
 
-    def _lookup_encoder(self, value):
-        vtype = type(value)
+    def _shared_parts_generator(self, generator, value):
+        value_id = id(value)
+        value_ref = self._shared_ids.get(value_id)
+        if value_ref is None:
+            self._shared_ids[value_id] = next(self._shared_id)
+            yield from self.tag_parts(28)
+            yield from generator(value)
+        else:
+            yield from self.tag_parts(29)
+            yield from self.int_parts(value_ref)
+
+    def _parts_generator(self, vtype):
+        used_type = vtype
         gen_text = default_generators.get(vtype)
         if gen_text:
             generator = getattr(self, gen_text)
@@ -130,12 +146,16 @@ class CBOREncoder:
             if generator:
                 generator = partial(generator, encoder=self)
             else:
+                # Check for subclasses
                 for kind, gen_text in default_generators.items():
-                    if isinstance(value, kind):
+                    if issubclass(vtype, kind):
+                        used_type = kind
                         generator = getattr(self, gen_text)
                         break
                 else:
                     raise CBOREncodingError(f'do not know how to encode object of type {vtype}')
+        if used_type in self._options.shared_types:
+            generator = partial(self._shared_parts_generator, generator)
         self._parts_generators[vtype] = generator
         return generator
 
@@ -344,7 +364,7 @@ class CBOREncoder:
         yield from self.byte_string_parts(value.tobytes())
 
     def generate_parts(self, value):
-        parts_gen = self._parts_generators.get(type(value)) or self._lookup_encoder(value)
+        parts_gen = self._parts_generators.get(type(value)) or self._parts_generator(type(value))
         yield from parts_gen(value)
 
     # Main external APIs
@@ -374,14 +394,18 @@ array_typecode_tags = {typecode: _typecode_tag(typecode) for typecode in 'bBhHiI
 
 default_generators = {
     int: 'int_parts',
-    (bytes, bytearray, memoryview): 'byte_string_parts',
+    bytes: 'byte_string_parts',
+    bytearray: 'byte_string_parts',
+    memoryview: 'byte_string_parts',
     str: 'text_string_parts',
-    (tuple, list): 'ordered_list_parts',
+    tuple: 'ordered_list_parts',
+    list: 'ordered_list_parts',
     dict: 'dict_parts',
     bool: 'bool_parts',
     type(None): 'None_parts',
     float: 'float_parts',
-    (set, frozenset): 'set_parts',
+    set: 'set_parts',
+    frozenset: 'set_parts',
     OrderedDict: 'ordered_dict_parts',
     array: 'array_parts',
     datetime: 'datetime_parts',
@@ -390,6 +414,8 @@ default_generators = {
     regexp_type: 'regexp_parts',
     UUID: 'uuid_parts',
     Fraction: 'fraction_parts',
-    (IPv4Address, IPv6Address): 'ip_address_parts',
-    (IPv4Network, IPv6Network): 'ip_network_parts',
+    IPv4Address: 'ip_address_parts',
+    IPv6Address: 'ip_address_parts',
+    IPv4Network: 'ip_network_parts',
+    IPv6Network: 'ip_network_parts',
 }

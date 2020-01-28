@@ -473,3 +473,35 @@ def test_float_style(float_style, expected):
     e = CBOREncoder(o)
     result = e.encode(items).hex()
     assert result == expected
+
+
+string1 = 'a long string'
+array1 = [1, string1]
+array2 = [array1, string1, array1, 4, array1]
+array3 = [string1] * 6
+
+@pytest.mark.parametrize('value, shared_types, expected', [
+    (array2, (), '8582016d61206c6f6e6720737472696e676d61206c6f6e6720737472696e6782016d6'
+     '1206c6f6e6720737472696e670482016d61206c6f6e6720737472696e67'),
+    (array2, CBOREncoderOptions.SHARED_TYPES,
+     'd81c85d81c82016d61206c6f6e6720737472696e676d61206c6f6e6720737472696e67d81d0104d81d01'),
+    (array2, {str}, '858201d81c6d61206c6f6e6720737472696e67d81d008201d81d00048201d81d00'),
+    (array2, {str, list}, 'd81c85d81c8201d81c6d61206c6f6e6720737472696e67d81d02d81d0104d81d01'),
+    (array3, {str}, '86d81c6d61206c6f6e6720737472696e67d81d00d81d00d81d00d81d00d81d00'),
+])
+def test_shared_types(value, shared_types, expected):
+    o = CBOREncoderOptions(shared_types=shared_types)
+    e = CBOREncoder(o)
+    result = e.encode(value).hex()
+    assert result == expected
+
+
+def test_recursive_type():
+    o = CBOREncoderOptions(shared_types={list,dict})
+    e = CBOREncoder(o)
+    a = [1, 2]
+    b = [3, 4]
+    a.append(b)
+    b.append(a)
+    result = e.encode(a)
+    assert result == bytes.fromhex('d81c83 0102 d81c83 0304d81d00')
