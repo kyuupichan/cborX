@@ -44,8 +44,8 @@ from cborx.types import CBORTag, CBOREncodingError, CBORSimple
 
 # TODO:
 #
-# - canonical encoding
-# - recursive objects
+# - recursive objects and value sharing
+# - encoder customization
 # - embedded CBOR data item
 # - streaming API
 
@@ -74,7 +74,7 @@ def sorted_pairs(pairs_gen, method):
     if method == CBORSortMethod.LEXICOGRAPHIC:
         return sorted(pairs_gen)
     elif method == CBORSortMethod.LENGTH_FIRST:
-        return sorted(pairs_gen, key=lambda k, v: (len(k), k))
+        return sorted(pairs_gen, key=lambda pair: (len(pair[0]), pair[0]))
     else:
         return pairs_gen
 
@@ -350,7 +350,10 @@ class CBOREncoder:
     # Main external APIs
 
     def encode(self, value):
-        return b''.join(self.generate_parts(value))
+        try:
+            return b''.join(self.generate_parts(value))
+        except RecursionError:
+            raise CBOREncodingError('self-referential object detected') from None
 
 
 def _typecode_tag(typecode):
@@ -373,7 +376,7 @@ default_generators = {
     int: 'int_parts',
     (bytes, bytearray, memoryview): 'byte_string_parts',
     str: 'text_string_parts',
-    (tuple, list): 'sorted_list_parts',
+    (tuple, list): 'ordered_list_parts',
     dict: 'dict_parts',
     bool: 'bool_parts',
     type(None): 'None_parts',

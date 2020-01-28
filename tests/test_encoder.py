@@ -189,7 +189,7 @@ def test_defaultdict():
     d['foo'].append(3)
     d[2].append(1)
     e = CBOREncoder()
-    assert e.encode(d) == e.encode({'foo': [3, 4], 2: [1]})
+    assert e.encode(d) == e.encode({'foo': [4, 3], 2: [1]})
 
 
 def test_counter():
@@ -448,23 +448,24 @@ def test_deterministic_IL(value):
         assert e.encode(CBORILList(iter(value))) == e.encode(value)
 
 
-@pytest.mark.parametrize('method, value', [
-    (CBORSortMethod.UNSORTED, '88626161617a1864812020811864f40a'),
-    (CBORSortMethod.LEXICOGRAPHIC, '880a186420617a6261618118648120f4'),
-    (CBORSortMethod.LENGTH_FIRST, '880a20f41864617a8120626161811864'),
+@pytest.mark.parametrize('method, expected', [
+    (CBORSortMethod.UNSORTED, 'a8626161f6617af61864f68120f620f6811864f6f4f60af6'),
+    (CBORSortMethod.LEXICOGRAPHIC, 'a80af61864f620f6617af6626161f6811864f68120f6f4f6'),
+    (CBORSortMethod.LENGTH_FIRST, 'a80af620f6f4f61864f6617af68120f6626161f6811864f6'),
 ])
-def test_sorting(method, value):
-    items = ['aa', 'z', 100, [-1], -1, [100], False, 10]
+def test_sorting(method, expected):
+    items = ['aa', 'z', 100, (-1, ), -1, (100, ), False, 10]
+    d = {key: None for key in items}
     o = CBOREncoderOptions(sort_method=method)
     e = CBOREncoder(o)
-    result = e.encode(items)
-    assert result == bytes.fromhex(value)
+    result = e.encode(d).hex()
+    assert result == expected
 
 
 @pytest.mark.parametrize('float_style, expected', [
-    (CBORFloatStyle.SHORTEST, '85f93e00f97c00f97e00f9fc00fb4021cccccccccccd'),
-    (CBORFloatStyle.DOUBLE, '85fb3ff8000000000000fb4021cccccccccccdfb7ff000'
-     '0000000000fb7ff8000000000000fbfff0000000000000'),
+    (CBORFloatStyle.SHORTEST, '85fb4021cccccccccccdf93e00f97c00f9fc00f97e00'),
+    (CBORFloatStyle.DOUBLE, '85fb4021cccccccccccdfb3ff8000000000000fb7ff00'
+     '00000000000fbfff0000000000000fb7ff8000000000000')
 ])
 def test_float_style(float_style, expected):
     items = [8.9, 1.5, math.inf, -math.inf, math.nan]
