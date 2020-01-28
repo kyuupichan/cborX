@@ -11,6 +11,7 @@ import re
 import pytest
 
 from cborx import *
+from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -166,7 +167,8 @@ def _indefinite_dict():
     (CBORUndefined(), b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
-    e = CBOREncoder()
+    o = CBOREncoderOptions(deterministic=False)
+    e = CBOREncoder(options=o)
     assert e.encode(value) == encoding
 
 
@@ -380,3 +382,46 @@ def test_simple(value, expected):
 def test_simple_fail(value):
     with pytest.raises(ValueError):
         CBORSimple(value)
+
+
+def test_deterministic():
+    o = CBOREncoderOptions(deterministic=True)
+    e = CBOREncoder(o)
+    for n in range(0, 24):
+        assert e.encode(n) == pack_byte(n)
+    for n in range(-23, 0):
+        assert e.encode(n) == pack_byte(0x20 + (-1 - n))
+    for n in range(24, 256):
+        assert e.encode(n) == b'\x18' + pack_byte(n)
+    for n in range(-256, -24):
+        assert e.encode(n) == b'\x38' + pack_byte(-1 - n)
+    assert e.encode(256) == b'\x19' + pack_be_uint16(256)
+    assert e.encode(65535) == b'\x19' + pack_be_uint16(65535)
+    assert e.encode(-257) == b'\x39' + pack_be_uint16(256)
+    assert e.encode(-65536) == b'\x39' + pack_be_uint16(65535)
+    assert e.encode(65536) == b'\x1a' + pack_be_uint32(65536)
+    assert e.encode(4294967295) == b'\x1a' + pack_be_uint32(4294967295)
+    assert e.encode(-65537) == b'\x3a' + pack_be_uint32(65536)
+    assert e.encode(-4294967296) == b'\x3a' + pack_be_uint32(4294967295)
+    assert e.encode(1.5) == bytes.fromhex('f93e00')
+    assert e.encode(1000000.5) == bytes.fromhex('fa49742408')
+
+
+@pytest.mark.parametrize('value', [
+    (2, 3, 4),
+    (b'foo', b' ', b'bar'),
+    ('foo', ' ', 'bar'),
+    (('foo', 2), ('bar', -15)),
+])
+def test_deterministic_IL(value):
+    o = CBOREncoderOptions(deterministic=True)
+    e = CBOREncoder(o)
+    if all(isinstance(item, bytes) for item in value):
+        assert e.encode(CBORILByteString(iter(value))) == e.encode(b''.join(value))
+    elif all(isinstance(item, str) for item in value):
+        assert e.encode(CBORILTextString(iter(value))) == e.encode(''.join(value))
+    elif all(isinstance(item, tuple) for item in value):
+        assert e.encode(CBORILDict(iter(value))) == e.encode(
+            {key: kvalue for key, kvalue in value})
+    else:
+        assert e.encode(CBORILList(iter(value))) == e.encode(value)

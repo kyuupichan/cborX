@@ -95,39 +95,51 @@ class CBORILObject:
 class CBORILByteString(CBORILObject):
 
     def __cbor_parts__(self, encoder):
-        yield b'\x5f'
         byte_string_parts = encoder.byte_string_parts
-        for byte_string in self.generator:
-            yield from byte_string_parts(byte_string)
-        yield b'\xff'
+        if encoder._options.deterministic:
+            yield from byte_string_parts(b''.join(self.generator))
+        else:
+            yield b'\x5f'
+            for byte_string in self.generator:
+                yield from byte_string_parts(byte_string)
+            yield b'\xff'
 
 
 class CBORILTextString(CBORILObject):
 
     def __cbor_parts__(self, encoder):
-        yield b'\x7f'
         text_string_parts = encoder.text_string_parts
-        for text_string in self.generator:
-            yield from text_string_parts(text_string)
-        yield b'\xff'
+        if encoder._options.deterministic:
+            yield from text_string_parts(''.join(self.generator))
+        else:
+            yield b'\x7f'
+            for text_string in self.generator:
+                yield from text_string_parts(text_string)
+            yield b'\xff'
 
 
 class CBORILList(CBORILObject):
 
     def __cbor_parts__(self, encoder):
-        yield b'\x9f'
-        generate_parts = encoder.generate_parts
-        for item in self.generator:
-            yield from generate_parts(item)
-        yield b'\xff'
+        if encoder._options.deterministic:
+            yield from encoder.list_parts(tuple(self.generator))
+        else:
+            yield b'\x9f'
+            generate_parts = encoder.generate_parts
+            for item in self.generator:
+                yield from generate_parts(item)
+            yield b'\xff'
 
 
 class CBORILDict(CBORILObject):
 
     def __cbor_parts__(self, encoder):
-        yield b'\xbf'
-        generate_parts = encoder.generate_parts
-        for key, kvalue in self.generator:
-            yield from generate_parts(key)
-            yield from generate_parts(kvalue)
-        yield b'\xff'
+        if encoder._options.deterministic:
+            yield from encoder.dict_parts({key: kvalue for key, kvalue in self.generator})
+        else:
+            generate_parts = encoder.generate_parts
+            yield b'\xbf'
+            for key, kvalue in self.generator:
+                yield from generate_parts(key)
+                yield from generate_parts(kvalue)
+            yield b'\xff'

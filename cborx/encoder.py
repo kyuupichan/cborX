@@ -46,6 +46,8 @@ from cborx.types import CBORTag, CBOREncodingError, CBORSimple
 # - canonical encoding
 # - recursive objects
 # - semantic tagging to force e.g. a particular float representation
+# - embedded CBOR data item
+# - streaming API
 
 
 class CBORDateTimeStyle(IntEnum):
@@ -54,12 +56,24 @@ class CBORDateTimeStyle(IntEnum):
     ISO_WITHOUT_Z = 2
 
 
+class CBORFloatStyle(IntEnum):
+    SHORTEST = 0
+    DOUBLE = 1
+
+
 class CBOREncoderOptions:
     '''Controls encoder behaviour.'''
 
-    def __init__(self, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP):
+    def __init__(self, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
+                 float_style = CBORFloatStyle.SHORTEST, float_integer_identity=False,
+                 realize_il=True, deterministic=True):
         self.tzinfo = tzinfo
         self.datetime_style = datetime_style
+        self.float_style = float_style
+        # In Python bignums and integers are always identical
+        self.float_integer_identity = float_integer_identity
+        self.realize_il = realize_il
+        self.deterministic = deterministic
 
 
 default_encoder_options = CBOREncoderOptions()
