@@ -183,28 +183,37 @@ def test_namedtuple():
     assert e.encode(value) == e.encode(tuple(value))
 
 
-# FIXME: these tests assume ordering
 def test_defaultdict():
     d = defaultdict(list)
-    d['foo'].append(3)
     d['foo'].append(4)
+    d['foo'].append(3)
     d[2].append(1)
     e = CBOREncoder()
     assert e.encode(d) == e.encode({'foo': [3, 4], 2: [1]})
 
 
 def test_counter():
-    c = Counter(cats=4, dogs=8)
+    c = Counter(cats=4, dogs=8, bats=12)
     e = CBOREncoder()
-    assert e.encode(c) == e.encode({'cats': 4, 'dogs': 8})
+    assert e.encode(c) == e.encode({'bats': 12, 'cats': 4, 'dogs': 8})
 
 
-def test_ordered_dict():
+@pytest.mark.parametrize('sort_method, deterministic', [
+    (CBORSortMethod.UNSORTED, False),
+    (CBORSortMethod.LEXICOGRAPHIC, False),
+    (CBORSortMethod.LEXICOGRAPHIC, True),
+    (CBORSortMethod.LENGTH_FIRST, False),
+    (CBORSortMethod.LENGTH_FIRST, True),
+])
+def test_ordered_dict(sort_method, deterministic):
+    o = CBOREncoderOptions(sort_method=sort_method, deterministic=deterministic)
+    e = CBOREncoder(o)
     c = OrderedDict()
     c['dogs'] = 8
+    c['bats'] = 12
     c['cats'] = 4
     e = CBOREncoder()
-    assert e.encode(c) == e.encode({'dogs': 8, 'cats': 4})
+    assert e.encode(c) == b'\xd9\x01\x10\xa3ddogs\x08dbats\x0cdcats\x04'
 
 
 # Tests from https://github.com/agronholm/cbor2/

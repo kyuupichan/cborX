@@ -27,6 +27,7 @@
 
 import re
 from array import array
+from collections import OrderedDict
 from datetime import datetime, date
 from decimal import Decimal
 from enum import IntEnum
@@ -194,17 +195,23 @@ class CBOREncoder:
         encoded_items_gen = (bjoin(generate_parts(item)) for item in value)
         yield from sorted_items(encoded_items_gen, self._options.sort_method)
 
-    def _sorted_dict_parts(self, kv_pairs):
+    def _sorted_dict_parts(self, kv_pairs, sort_method):
         generate_parts = self.generate_parts
         pairs_gen = ((bjoin(generate_parts(key)), value) for key, value in kv_pairs)
         yield from self.length_parts(len(kv_pairs), 0xa0)
-        for encoded_key, value in sorted_pairs(pairs_gen, self._options.sort_method):
+        for encoded_key, value in sorted_pairs(pairs_gen, sort_method):
             yield encoded_key
             yield from generate_parts(value)
 
     def dict_parts(self, value):
         assert isinstance(value, dict)
-        yield from self._sorted_dict_parts(value.items())
+        yield from self._sorted_dict_parts(value.items(), self._options.sort_method)
+
+    def ordered_dict_parts(self, value):
+        assert isinstance(value, OrderedDict)
+        # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
+        yield from self.tag_parts(272)
+        yield from self._sorted_dict_parts(value.items(), CBORSortMethod.UNSORTED)
 
     def set_parts(self, value):
         assert isinstance(value, (set, frozenset))
@@ -360,6 +367,7 @@ default_generators = {
     type(None): 'None_parts',
     float: 'float_parts',
     (set, frozenset): 'set_parts',
+    OrderedDict: 'ordered_dict_parts',
     array: 'array_parts',
     datetime: 'datetime_parts',
     date: 'date_parts',

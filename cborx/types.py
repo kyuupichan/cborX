@@ -135,7 +135,8 @@ class CBORILDict(CBORILObject):
 
     def __cbor_parts__(self, encoder):
         if encoder._options.deterministic:
-            yield from encoder._sorted_dict_parts(tuple(self.generator))
+            yield from encoder._sorted_dict_parts(tuple(self.generator),
+                                                  encoder._options.sort_method)
         else:
             generate_parts = encoder.generate_parts
             yield b'\xbf'
