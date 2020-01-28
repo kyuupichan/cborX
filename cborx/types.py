@@ -96,7 +96,7 @@ class CBORILByteString(CBORILObject):
 
     def __cbor_parts__(self, encoder):
         byte_string_parts = encoder.byte_string_parts
-        if encoder._options.deterministic:
+        if encoder._options.realize_il:
             yield from byte_string_parts(b''.join(self.generator))
         else:
             yield b'\x5f'
@@ -109,7 +109,7 @@ class CBORILTextString(CBORILObject):
 
     def __cbor_parts__(self, encoder):
         text_string_parts = encoder.text_string_parts
-        if encoder._options.deterministic:
+        if encoder._options.realize_il:
             yield from text_string_parts(''.join(self.generator))
         else:
             yield b'\x7f'
@@ -121,7 +121,7 @@ class CBORILTextString(CBORILObject):
 class CBORILList(CBORILObject):
 
     def __cbor_parts__(self, encoder):
-        if encoder._options.deterministic:
+        if encoder._options.realize_il:
             yield from encoder.sorted_list_parts(tuple(self.generator))
         else:
             yield b'\x9f'
@@ -134,7 +134,7 @@ class CBORILList(CBORILObject):
 class CBORILDict(CBORILObject):
 
     def __cbor_parts__(self, encoder):
-        if encoder._options.deterministic:
+        if encoder._options.realize_il:
             yield from encoder._sorted_dict_parts(tuple(self.generator),
                                                   encoder._options.sort_method)
         else:

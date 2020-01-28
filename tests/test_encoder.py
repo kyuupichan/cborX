@@ -167,7 +167,7 @@ def _indefinite_dict():
     (CBORUndefined(), b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
-    o = CBOREncoderOptions(deterministic=False, sort_method=CBORSortMethod.UNSORTED)
+    o = CBOREncoderOptions(sort_method=CBORSortMethod.UNSORTED, realize_il=False)
     e = CBOREncoder(options=o)
     assert e.encode(value) == encoding
 
@@ -206,7 +206,10 @@ def test_counter():
     (CBORSortMethod.LENGTH_FIRST, True),
 ])
 def test_ordered_dict(sort_method, deterministic):
-    o = CBOREncoderOptions(sort_method=sort_method, deterministic=deterministic)
+    if deterministic:
+        o = CBOREncoderOptions.deterministic(sort_method=sort_method)
+    else:
+        o = CBOREncoderOptions(sort_method=sort_method)
     e = CBOREncoder(o)
     c = OrderedDict()
     c['dogs'] = 8
@@ -338,7 +341,7 @@ def test_encodings(value, expected):
     'set 1LX', 'set 1LF', 'set 2LX', 'set 2LF', 'frozenset'
 ])
 def test_set(value, sort_method, expected):
-    o = CBOREncoderOptions(sort_method=sort_method, deterministic=False)
+    o = CBOREncoderOptions(sort_method=sort_method)
     e = CBOREncoder(o)
     result = e.encode(value)
     assert result == bytes.fromhex(expected)
@@ -403,7 +406,7 @@ def test_simple_fail(value):
 
 
 def test_deterministic():
-    o = CBOREncoderOptions(deterministic=True)
+    o = CBOREncoderOptions.deterministic()
     e = CBOREncoder(o)
     for n in range(0, 24):
         assert e.encode(n) == pack_byte(n)
@@ -432,7 +435,7 @@ def test_deterministic():
     (('foo', 2), ('bar', -15)),
 ])
 def test_deterministic_IL(value):
-    o = CBOREncoderOptions(deterministic=True)
+    o = CBOREncoderOptions.deterministic()
     e = CBOREncoder(o)
     if all(isinstance(item, bytes) for item in value):
         assert e.encode(CBORILByteString(iter(value))) == e.encode(b''.join(value))
@@ -452,7 +455,7 @@ def test_deterministic_IL(value):
 ])
 def test_sorting(method, value):
     items = ['aa', 'z', 100, [-1], -1, [100], False, 10]
-    o = CBOREncoderOptions(sort_method=method, deterministic=False)
+    o = CBOREncoderOptions(sort_method=method)
     e = CBOREncoder(o)
     result = e.encode(items)
     assert result == bytes.fromhex(value)

@@ -46,7 +46,6 @@ from cborx.types import CBORTag, CBOREncodingError, CBORSimple
 #
 # - canonical encoding
 # - recursive objects
-# - semantic tagging to force e.g. a particular float representation
 # - embedded CBOR data item
 # - streaming API
 
@@ -93,19 +92,22 @@ def sorted_items(encoded_items_gen, method):
 class CBOREncoderOptions:
     '''Controls encoder behaviour.'''
 
-    def __init__(self, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
+    def __init__(self, *, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
                  float_style = CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
-                 float_integer_identity=False, realize_il=True, deterministic=True):
+                 realize_il=True):
+        # In Python bignums and integers are indistinguishable
         self.tzinfo = tzinfo
         self.datetime_style = datetime_style
         self.float_style = float_style
         self.sort_method = sort_method
-        # In Python bignums and integers are always identical
-        self.float_integer_identity = float_integer_identity
         self.realize_il = realize_il
-        self.deterministic = deterministic
-        if deterministic and sort_method == CBORSortMethod.UNSORTED:
-            raise ValueError('deterministic encoding requires a sorting method')
+
+    @classmethod
+    def deterministic(cls, **kwargs):
+        if kwargs.get('sort_method') == CBORSortMethod.UNSORTED:
+            raise ValueError('a deterministic encoder requires sorting')
+        kwargs['realize_il'] = True
+        return cls(**kwargs)
 
 
 default_encoder_options = CBOREncoderOptions()
