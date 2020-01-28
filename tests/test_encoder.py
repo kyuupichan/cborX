@@ -316,23 +316,32 @@ def test_date(value, expected):
     (IPv4Network('192.168.0.100/24', strict=False), 'd90105a144c0a800001818'),
     (IPv6Network('2001:db8:85a3:0:0:8a2e::/96', strict=False),
      'd90105a15020010db885a3000000008a2e000000001860'),
-    ({1, 2, 3}, 'd9010283010203'),
-    ({"abcd", 2, (5, 7)}, ('d9010283646162636402820507', 'd9010283028205076461626364')),
-    (frozenset((1, 2, 3)), 'd9010283010203'),
 ], ids = [
     'regex 1', 'regex 2',
     'UUID',
     'Fraction 1', 'Fraction 2', 'Fraction 3',
     'IPv4 1', 'IPv4 2', 'IPv6 1', 'IPv6 2', 'IPv4 Network 1', 'IPv4 Network 2', 'IPv6 Network',
-    'set 1', 'set 2', 'frozenset',
 ])
 def test_encodings(value, expected):
     e = CBOREncoder()
     result = e.encode(value).hex()
-    if isinstance(expected, tuple):
-        assert result in expected
-    else:
-        assert result == expected
+    assert result == expected
+
+
+@pytest.mark.parametrize('value, sort_method, expected', [
+    ({1, 2, 3}, CBORSortMethod.LEXICOGRAPHIC, 'd9010283010203'),
+    ({1, 2, 3}, CBORSortMethod.LENGTH_FIRST, 'd9010283010203'),
+    ({"abcd", 2, (5, 7)}, CBORSortMethod.LEXICOGRAPHIC, 'd90102 83 02 6461626364 820507'),
+    ({"abcd", 2, (5, 7)}, CBORSortMethod.LENGTH_FIRST, 'd90102 83 02 820507 6461626364'),
+    (frozenset((1, 2, 3)), CBORSortMethod.LEXICOGRAPHIC, 'd90102 83 010203'),
+], ids = [
+    'set 1LX', 'set 1LF', 'set 2LX', 'set 2LF', 'frozenset'
+])
+def test_set(value, sort_method, expected):
+    o = CBOREncoderOptions(sort_method=sort_method, deterministic=False)
+    e = CBOREncoder(o)
+    result = e.encode(value)
+    assert result == bytes.fromhex(expected)
 
 
 def test_default_enconder_options():
