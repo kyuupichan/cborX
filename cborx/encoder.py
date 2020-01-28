@@ -228,6 +228,16 @@ class CBOREncoder:
 
     def float_parts(self, value):
         '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
+        if self._options.float_style == CBORFloatStyle.SHORTEST:
+            yield from self.shortest_float_parts(value)
+        else:
+            yield from self.double_float_parts(value)
+
+    def double_float_parts(self, value):
+        assert isinstance(value, float)
+        yield b'\xfb' + pack_be_float8(value)
+
+    def shortest_float_parts(self, value):
         assert isinstance(value, float)
         if value == value:
             try:

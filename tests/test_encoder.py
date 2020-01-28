@@ -456,3 +456,16 @@ def test_sorting(method, value):
     e = CBOREncoder(o)
     result = e.encode(items)
     assert result == bytes.fromhex(value)
+
+
+@pytest.mark.parametrize('float_style, expected', [
+    (CBORFloatStyle.SHORTEST, '85f93e00f97c00f97e00f9fc00fb4021cccccccccccd'),
+    (CBORFloatStyle.DOUBLE, '85fb3ff8000000000000fb4021cccccccccccdfb7ff000'
+     '0000000000fb7ff8000000000000fbfff0000000000000'),
+])
+def test_float_style(float_style, expected):
+    items = [8.9, 1.5, math.inf, -math.inf, math.nan]
+    o = CBOREncoderOptions(float_style=float_style)
+    e = CBOREncoder(o)
+    result = e.encode(items).hex()
+    assert result == expected
