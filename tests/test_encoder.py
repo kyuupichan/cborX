@@ -425,3 +425,16 @@ def test_deterministic_IL(value):
             {key: kvalue for key, kvalue in value})
     else:
         assert e.encode(CBORILList(iter(value))) == e.encode(value)
+
+
+@pytest.mark.parametrize('method, value', [
+    (CBORSortMethod.UNSORTED, '88626161617a1864812020811864f40a'),
+    (CBORSortMethod.LEXICOGRAPHIC, '880a186420617a6261618118648120f4'),
+    (CBORSortMethod.LENGTH_FIRST, '880a20f41864617a8120626161811864'),
+])
+def test_sorting(method, value):
+    items = ['aa', 'z', 100, [-1], -1, [100], False, 10]
+    o = CBOREncoderOptions(sort_method=method, deterministic=False)
+    e = CBOREncoder(o)
+    result = e.encode(items)
+    assert result == bytes.fromhex(value)
