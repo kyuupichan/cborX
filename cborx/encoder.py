@@ -49,6 +49,8 @@ from cborx.types import CBORTag, CBOREncodingError, CBORSimple
 # - embedded CBOR data item
 # - streaming API
 
+bjoin = b''.join
+
 
 class CBORDateTimeStyle(IntEnum):
     TIMESTAMP = 0
@@ -61,19 +63,48 @@ class CBORFloatStyle(IntEnum):
     DOUBLE = 1
 
 
+class CBORSortMethod(IntEnum):
+    LEXICOGRAPHIC = 0      # draft-ietf-cbor-7049bis-12
+    LENGTH_FIRST = 1       # RFC 7049
+    UNSORTED = 2
+
+
+def sorted_pairs(pairs_gen, method):
+    '''Return an iterable sorting the pairs according to method.'''
+    if method == CBORSortMethod.LEXICOGRAPHIC:
+        return sorted(pairs_gen)
+    elif method == CBORSortMethod.LENGTH_FIRST:
+        return sorted(pairs_gen, key=lambda k, v: (len(k), k))
+    else:
+        return pairs_gen
+
+
+def sorted_items(encoded_items_gen, method):
+    '''Return an iterable sorting the items according to method.'''
+    if method == CBORSortMethod.LEXICOGRAPHIC:
+        return sorted(encoded_items_gen)
+    elif method == CBORSortMethod.LENGTH_FIRST:
+        return sorted(encoded_items_gen, key=lambda item: (len(item), item))
+    else:
+        return encoded_items_gen
+
+
 class CBOREncoderOptions:
     '''Controls encoder behaviour.'''
 
     def __init__(self, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
-                 float_style = CBORFloatStyle.SHORTEST, float_integer_identity=False,
-                 realize_il=True, deterministic=True):
+                 float_style = CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
+                 float_integer_identity=False, realize_il=True, deterministic=True):
         self.tzinfo = tzinfo
         self.datetime_style = datetime_style
         self.float_style = float_style
+        self.sort_method = sort_method
         # In Python bignums and integers are always identical
         self.float_integer_identity = float_integer_identity
         self.realize_il = realize_il
         self.deterministic = deterministic
+        if deterministic and sort_method == CBORSortMethod.UNSORTED:
+            raise ValueError('deterministic encoding requires a sorting method')
 
 
 default_encoder_options = CBOREncoderOptions()
@@ -150,25 +181,35 @@ class CBOREncoder:
         yield from self.length_parts(len(value_utf8), 0x60)
         yield value_utf8
 
-    def list_parts(self, value):
+    def ordered_list_parts(self, value):
         assert isinstance(value, (tuple, list))
         yield from self.length_parts(len(value), 0x80)
         generate_parts = self.generate_parts
-        for item in value:
-            yield from generate_parts(item)
+        yield from (bjoin(generate_parts(item)) for item in value)
+
+    def sorted_list_parts(self, value):
+        assert isinstance(value, (tuple, list))
+        yield from self.length_parts(len(value), 0x80)
+        generate_parts = self.generate_parts
+        encoded_items_gen = (bjoin(generate_parts(item)) for item in value)
+        yield from sorted_items(encoded_items_gen, self._options.sort_method)
+
+    def _sorted_dict_parts(self, kv_pairs):
+        generate_parts = self.generate_parts
+        pairs_gen = ((bjoin(generate_parts(key)), value) for key, value in kv_pairs)
+        yield from self.length_parts(len(kv_pairs), 0xa0)
+        for encoded_key, value in sorted_pairs(pairs_gen, self._options.sort_method):
+            yield encoded_key
+            yield from generate_parts(value)
 
     def dict_parts(self, value):
         assert isinstance(value, dict)
-        yield from self.length_parts(len(value), 0xa0)
-        generate_parts = self.generate_parts
-        for key, kvalue in value.items():
-            yield from generate_parts(key)
-            yield from generate_parts(kvalue)
+        yield from self._sorted_dict_parts(value.items())
 
     def set_parts(self, value):
         assert isinstance(value, (set, frozenset))
         yield from self.tag_parts(258)
-        yield from self.list_parts(tuple(value))
+        yield from self.sorted_list_parts(tuple(value))
 
     def bool_parts(self, value):
         assert isinstance(value, bool)
@@ -244,14 +285,14 @@ class CBOREncoder:
             if dt.sign:
                 mantissa = -mantissa
             yield from self.tag_parts(4)
-            yield from self.list_parts((dt.exponent, mantissa))
+            yield from self.ordered_list_parts((dt.exponent, mantissa))
         else:
             yield from self.float_parts(float(value))
 
     def fraction_parts(self, value):
         assert isinstance(value, Fraction)
         yield from self.tag_parts(30)
-        yield from self.list_parts((value.numerator, value.denominator))
+        yield from self.ordered_list_parts((value.numerator, value.denominator))
 
     def regexp_parts(self, value):
         assert isinstance(value, regexp_type)
@@ -271,8 +312,9 @@ class CBOREncoder:
     def ip_network_parts(self, value):
         assert isinstance(value, (IPv4Network, IPv6Network))
         yield from self.tag_parts(261)
-        # For some daft reason a dictionary was chosen over a list
-        yield from self.dict_parts({value.network_address.packed: value.prefixlen})
+        # For some daft reason a one-element dictionary was chosen over a pair
+        pairs = [(value.network_address.packed, value.prefixlen)]
+        yield from self._sorted_dict_parts(pairs)
 
     def array_parts(self, value):
         assert isinstance(value, array)
@@ -312,7 +354,7 @@ default_generators = {
     int: 'int_parts',
     (bytes, bytearray, memoryview): 'byte_string_parts',
     str: 'text_string_parts',
-    (tuple, list): 'list_parts',
+    (tuple, list): 'sorted_list_parts',
     dict: 'dict_parts',
     bool: 'bool_parts',
     type(None): 'None_parts',

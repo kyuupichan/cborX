@@ -167,7 +167,7 @@ def _indefinite_dict():
     (CBORUndefined(), b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
-    o = CBOREncoderOptions(deterministic=False)
+    o = CBOREncoderOptions(deterministic=False, sort_method=CBORSortMethod.UNSORTED)
     e = CBOREncoder(options=o)
     assert e.encode(value) == encoding
 

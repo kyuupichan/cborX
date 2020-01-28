@@ -1,5 +1,5 @@
 from cborx.encoder import (
-    CBOREncoder, CBOREncoderOptions, CBORDateTimeStyle,
+    CBOREncoder, CBOREncoderOptions, CBORDateTimeStyle, CBORSortMethod,
 )
 from cborx.types import (
     CBORUndefined, CBORSimple, CBORTag,

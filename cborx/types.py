@@ -122,7 +122,7 @@ class CBORILList(CBORILObject):
 
     def __cbor_parts__(self, encoder):
         if encoder._options.deterministic:
-            yield from encoder.list_parts(tuple(self.generator))
+            yield from encoder.sorted_list_parts(tuple(self.generator))
         else:
             yield b'\x9f'
             generate_parts = encoder.generate_parts
@@ -135,7 +135,7 @@ class CBORILDict(CBORILObject):
 
     def __cbor_parts__(self, encoder):
         if encoder._options.deterministic:
-            yield from encoder.dict_parts({key: kvalue for key, kvalue in self.generator})
+            yield from encoder._sorted_dict_parts(tuple(self.generator))
         else:
             generate_parts = encoder.generate_parts
             yield b'\xbf'
