@@ -26,149 +26,90 @@
 '''CBOR decoding.'''
 
 
-from packing import unpack_byte
-
-
-initial_byte_table = []
-
-
-class ReservedError(Exception):
-    pass
-
-
-class CBORSyntaxError(Exception):
-    pass
+from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64
+from cborx.types import CBOREOFError
 
 
 class CBORBreak(Exception):
     pass
 
 
-def raise_reserved(read, init_byte):
-    raise ReservedError(f'{an initial byte of {init_byte} is reserved}')
+uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
 
 
-def read_uint8(read):
-    return ord(read(1))
+class CBORDecoder:
 
+    def __init__(self, read):
+        self._read = read
+        # self._decode_funcs = {}
+        self._major_decoders = {n: getattr(self, f'_decode_major_{n}') for n in range(2)}
 
-def read_uint16(read):
-    result, = unpack_be_uint16(read(2))
-    return result
+    def _lookup_decoder(self, first_byte):
+        decode_func = self._major_decoders[first_byte >> 5](first_byte & 0x1f)
+        self._decode_funcs[first_byte] = decode_func
+        return decode_func
 
-
-def read_uint32(read):
-    result, = unpack_be_uint32(read(4))
-    return result
-
-
-def read_uint64(read):
-    result, = unpack_be_uint64(read(8))
-    return result
-
-
-def read_indefinite_length_byte_string(read):
-    def parts(read):
+    def _decode_major_0(self, first_byte):
+        minor = first_byte & 0x1f
+        if minor < 24:
+            return minor
+        size = minor - 24
         try:
-            while True:
-                yield read_definite_length_byte_string(read)
-        except CBORBreakException:
-            pass
+            value, = uint_unpackers[size](self._read_safe(1 << size))
+        except IndexError:
+            raise CBORDecodingError(f'ill formed CBOR with initial byte {first_byte}') from None
+        return value
 
-    return b''.join(parts(read))
+    def _decode_major_1(self, first_byte):
+        return -1 - self._decode_major_0(first_byte)
 
+    def _read_safe(self, n):
+        result = self._read(n)
+        if len(result) == n:
+            return result
+        raise CBOREOFError(f'need {n:,d} bytes but only {len(result):,d} available')
 
-def read_byte_string(read, init_byte):
-    length = read_length(init_byte)
-    if length == CBOR_INDEFINITE_LENGTH:
-        return read_indefinite_length_byte_string(read)
-    return read(length)
+    def _read_safe_from_generator(self, n):
+        while True:
+            if read_len >= n:
+                return n_bytes_from_parts
+            part = next(self._read)
+            read_len += len(part)
 
-
-def read_definite_length_byte_string(read):
-    init_byte = read(1)
-    if init_byte & 0xe0 != 64:
-        if init_byte == CBOR_BREAK:
-            raise CBORBreakException
-        raise CBORSyntaxError(f'expected a definite length byte string')
-    length = read_length(init_byte)
-    if length == CBOR_INDEFINITE_LENGTH:
-        raise CBORSyntaxError(f'nested indefinite length byte string')
-    return read(length)
-
-
-def read_definite_length_text_string(read):
-    init_byte = read(1)
-    if init_byte & 0xe0 != 96:
-        if init_byte == CBOR_BREAK:
-            raise CBORBreakException
-        raise CBORSyntaxError(f'expected a definite length text string')
-    length = read_length(init_byte)
-    if length == CBOR_INDEFINITE_LENGTH:
-        raise CBORSyntaxError(f'nested indefinite length text string')
-    return read(length)
+    def decode_item(self):
+        first_byte = ord(self._read_safe(1))
+        return self._major_decoders[first_byte >> 5](first_byte)
+        #decode_func = self._decode_funcs.get(first_byte) or self._lookup_decoder(first_byte)
+        #return decode_func()
 
 
-def read_indefinite_length_text_string(read):
-    def parts(read):
-        try:
-            while True:
-                yield read_definite_length_text_string(read)
-        except CBORBreakException:
-            pass
-
-    return ''.join(parts(read))
+def loads(read, **kwargs):
+    decoder = CBORDecoder(read, **kwargs)
+    return decoder.decode_item()
 
 
-def read_text_string(read, init_byte):
-    length = read_length(init_byte)
-    if length == CBOR_INDEFINITE_LENGTH:
-        return read_indefinite_length_text_string(read)
-    return read(length).decode()
+def load_stream(bytes_gen, **kwargs):
+    '''A generator of top-level decoded CBOR objects reading from a byte stream.
+
+    The byte stream yields byte strings of arbitrary size.'''
+    decoder = CBORDecoder(bytes_gen, **kwargs)
+    try:
+        decode_item = decoder.decode_item
+        while True:
+            yield decode_item()
+    except CBOREOFError:
+        pass
 
 
-def _init_table():
-    ibt = initial_byte_table
+async def aload_stream(bytes_async_gen, **kwargs):
+    '''An asynchronous generator of top-level decoded CBOR objects reading from a byte stream.
 
-    # Unsigned integer literal
-    for n in range(0, 24):
-        ibt[n] = lambda read : n
-    ibt[24] = read_uint8
-    ibt[25] = read_uint16
-    ibt[26] = read_uint32
-    ibt[27] = read_uint64
-    for n in range(28, 32):
-        ibt[n] = partial(raise_reserved, init_byte=n)
-
-    # Signed integer literal
-    for n in range(0, 24):
-        value = -1 - n
-        ibt[n + 32] = lambda read : value
-    ibt[24 + 32] = lambda read : - 1 - read_uint8(read)
-    ibt[25 + 32] = lambda read : - 1 - read_uint16(read)
-    ibt[26 + 32] = lambda read : - 1 - read_uint32(read)
-    ibt[27 + 32] = lambda read : - 1 - read_uint64(read)
-    for n in range(28, 32):
-        ibt[n + 32] = partial(raise_reserved, init_byte=n + 32)
-
-    # Byte strings
-    for n in range(0, 24):
-        ibt[n + 64] = lambda read : read(n)
-    ibt[24 + 64] = lambda read : read(read_uint8(read))
-    ibt[25 + 64] = lambda read : read(read_uint16(read))
-    ibt[26 + 64] = lambda read : read(read_uint32(read))
-    ibt[27 + 64] = lambda read : read(read_uint64(read))
-    for n in range(28, 31):
-        ibt[n + 64] = partial(raise_reserved, init_byte=n + 64)
-    ibt[31 + 64] = read_byte_string_indefinite
-
-    # Text strings
-    for n in range(0, 24):
-        ibt[n + 96] = lambda read : to_text_string(read(n))
-    ibt[24 + 96] = lambda read : to_text_string(read(read_uint8(read)))
-    ibt[25 + 96] = lambda read : to_text_string(read(read_uint16(read)))
-    ibt[26 + 96] = lambda read : to_text_string(read(read_uint32(read)))
-    ibt[27 + 96] = lambda read : to_text_string(read(read_uint64(read)))
-    for n in range(28, 31):
-        ibt[n + 96] = partial(raise_reserved, init_byte=n + 96)
-    ibt[31 + 96] = lambda read: read_text_string_indefinite(read)
+    The byte stream asynchronously yields byte strings of arbitrary size.
+    '''
+    decoder = CBORDecoder(bytes_async_gen, **kwargs)
+    try:
+        async_decode_item = decoder.async_decode_item
+        while True:
+            yield await async_decode_item()
+    except CBOREOFError:
+        pass

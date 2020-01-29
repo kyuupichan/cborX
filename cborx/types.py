@@ -36,6 +36,14 @@ class CBORError(Exception):
     pass
 
 
+class CBORDecodingError(CBORError):
+    pass
+
+
+class CBOREOFError(CBORDecodingError):
+    pass
+
+
 class CBOREncodingError(CBORError):
     pass
 
@@ -140,7 +148,6 @@ class CBORILDict(CBORILObject):
 
 
 def encode_length(length, major):
-    # assert length >= 0
     if length < 24:
         return pack_byte(major + length)
     elif length < 256:

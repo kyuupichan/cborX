@@ -40,15 +40,13 @@ from uuid import UUID
 from cborx.packing import (
     pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
-from cborx.types import CBORTag, CBOREncodingError, CBORSimple, encode_length
+from cborx.types import CBORTag, CBOREncodingError, CBORSimple, encode_length, bjoin, sjoin
 
 # TODO:
 #
 # - encoder customization
 # - embedded CBOR data item
 # - streaming API
-
-bjoin = b''.join
 
 
 class CBORDateTimeStyle(IntEnum):
@@ -158,33 +156,30 @@ class CBOREncoder:
 
     def encode_int(self, value):
         assert isinstance(value, int)
-        if value < 0:
-            value = -1 - value
-            major = 0x20
-        else:
-            major = 0x00
         try:
-            return encode_length(value, major)
+            if value < 0:
+                prefix = b'\xc3'
+                value = -1 - value
+                return encode_length(value, 0x20)
+            else:
+                prefix = b'\xc2'
+                return encode_length(value, 0x00)
         except OverflowError:
             bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
-            return (b'\xc3' if major else b'\xc2') + self.encode_byte_string(bignum_encoding)
+            return prefix + self.encode_byte_string(bignum_encoding)
 
     def encode_byte_string(self, value):
-        assert isinstance(value, (bytes, bytearray, memoryview))
         return encode_length(len(value), 0x40) + value
 
     def encode_text_string(self, value):
-        assert isinstance(value, str)
         value_utf8 = value.encode()
         return encode_length(len(value_utf8), 0x60) + value_utf8
 
     def encode_ordered_list(self, value):
-        assert isinstance(value, (tuple, list))
         encode_item = self.encode_item
         return encode_length(len(value), 0x80) + bjoin(encode_item(item) for item in value)
 
     def encode_sorted_list(self, value):
-        assert isinstance(value, (tuple, list))
         length = encode_length(len(value), 0x80)
         encode_item = self.encode_item
         encoded_items_gen = (encode_item(item) for item in value)
@@ -198,25 +193,20 @@ class CBOREncoder:
                               for encoded_key, value in sorted_pairs(pairs_gen, sort_method))
 
     def encode_dict(self, value):
-        assert isinstance(value, dict)
         return self.encode_sorted_dict(value.items(), self._options.sort_method)
 
     def encode_ordered_dict(self, value):
-        assert isinstance(value, OrderedDict)
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
-        return self.encode_tag(272) + self.encode_sorted_dict(
-            value.items(), CBORSortMethod.UNSORTED)
+        return self.encode_tag(272) + self.encode_sorted_dict(value.items(),
+                                                              CBORSortMethod.UNSORTED)
 
     def encode_set(self, value):
-        assert isinstance(value, (set, frozenset))
         return self.encode_tag(258) + self.encode_sorted_list(tuple(value))
 
     def encode_bool(self, value):
-        #assert isinstance(value, bool)
         return b'\xf5' if value else b'\xf4'
 
     def encode_None(self, value):
-        assert value is None
         return b'\xf6'
 
     def encode_float(self, value):
@@ -227,11 +217,9 @@ class CBOREncoder:
             return self.encode_double_float(value)
 
     def encode_double_float(self, value):
-        assert isinstance(value, float)
         return b'\xfb' + pack_be_float8(value)
 
     def encode_shortest_float(self, value):
-        assert isinstance(value, float)
         if value == value:
             try:
                 pack4 = pack_be_float4(value)
@@ -289,7 +277,7 @@ class CBOREncoder:
         dt = value.as_tuple()
         # Is this decimal finite?
         if isinstance(dt.exponent, int):
-            mantissa = int(''.join(str(digit) for digit in dt.digits))
+            mantissa = int(sjoin(str(digit) for digit in dt.digits))
             if dt.sign:
                 mantissa = -mantissa
             return self.encode_tag(4) + self.encode_ordered_list((dt.exponent, mantissa))

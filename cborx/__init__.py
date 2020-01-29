@@ -1,3 +1,6 @@
+from cborx.decoder import (
+    loads,
+)
 from cborx.encoder import (
     CBOREncoder, CBOREncoderOptions, CBORDateTimeStyle, CBORFloatStyle, CBORSortMethod,
 )
