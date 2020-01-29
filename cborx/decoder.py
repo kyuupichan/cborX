@@ -30,7 +30,17 @@ from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpac
 from cborx.types import CBOREOFError
 
 
+# TODO:
+# Handle indefinite-length decodings
+# Handle non-minimal integer / length decodings
+# Handle decoding value-shared encodings
+
+
 class CBORBreak(Exception):
+    pass
+
+
+class CBORIndefiniteLength(Exception):
     pass
 
 
@@ -41,27 +51,44 @@ class CBORDecoder:
 
     def __init__(self, read):
         self._read = read
-        # self._decode_funcs = {}
-        self._major_decoders = {n: getattr(self, f'_decode_major_{n}') for n in range(2)}
+        self._major_decoders = (
+            self.decode_length,
+            self.decode_negative_int,
+            self.decode_byte_string,
+            self.decode_text_string,
+        )
 
-    def _lookup_decoder(self, first_byte):
-        decode_func = self._major_decoders[first_byte >> 5](first_byte & 0x1f)
-        self._decode_funcs[first_byte] = decode_func
-        return decode_func
-
-    def _decode_major_0(self, first_byte):
+    def decode_length(self, first_byte):
         minor = first_byte & 0x1f
         if minor < 24:
             return minor
-        size = minor - 24
-        try:
-            value, = uint_unpackers[size](self._read_safe(1 << size))
-        except IndexError:
-            raise CBORDecodingError(f'ill formed CBOR with initial byte {first_byte}') from None
-        return value
+        if minor < 28:
+            kind = minor - 24
+            length, = uint_unpackers[kind](self._read_safe(1 << kind))
+            return length
+        if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
+            raise CBORIndefiniteLength   # byte string, text string, list, dict
+        if first_byte == 0xff:
+            raise CBORBreak
+        raise CBORDecodingError(f'ill-formed CBOR with initial byte {first_byte}')
 
-    def _decode_major_1(self, first_byte):
-        return -1 - self._decode_major_0(first_byte)
+    def decode_negative_int(self, first_byte):
+        return -1 - self.decode_length(first_byte)
+
+    def decode_byte_string(self, first_byte):
+        try:
+            length = self.decode_length(first_byte)
+        except CBORIndefiniteLength:
+            raise FIXME
+        return self._read_safe(length)
+
+    def decode_text_string(self, first_byte):
+        try:
+            length = self.decode_length(first_byte)
+        except CBORIndefiniteLength:
+            raise FIXME
+        utf8_bytes = self._read_safe(length)
+        return utf8_bytes.decode()
 
     def _read_safe(self, n):
         result = self._read(n)
@@ -69,18 +96,9 @@ class CBORDecoder:
             return result
         raise CBOREOFError(f'need {n:,d} bytes but only {len(result):,d} available')
 
-    def _read_safe_from_generator(self, n):
-        while True:
-            if read_len >= n:
-                return n_bytes_from_parts
-            part = next(self._read)
-            read_len += len(part)
-
     def decode_item(self):
         first_byte = ord(self._read_safe(1))
         return self._major_decoders[first_byte >> 5](first_byte)
-        #decode_func = self._decode_funcs.get(first_byte) or self._lookup_decoder(first_byte)
-        #return decode_func()
 
 
 def loads(read, **kwargs):
