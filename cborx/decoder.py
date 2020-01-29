@@ -25,6 +25,8 @@
 
 '''CBOR decoding.'''
 
+from io import BytesIO
+
 
 from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64
 from cborx.types import CBOREOFError
@@ -101,33 +103,48 @@ class CBORDecoder:
         return self._major_decoders[first_byte >> 5](first_byte)
 
 
-def loads(read, **kwargs):
-    decoder = CBORDecoder(read, **kwargs)
+def loads(binary, **kwargs):
+    '''Deserialize a binary object (e.g. a bytes object, a bytearray object, a memoryview
+    object) containing a CBOR document to a Python object.
+
+    kwargs: arguments to pass to CBORDecoder
+    '''
+    decoder = CBORDecoder(BytesIO(binary).read, **kwargs)
     return decoder.decode_item()
 
 
-def load_stream(bytes_gen, **kwargs):
-    '''A generator of top-level decoded CBOR objects reading from a byte stream.
+def load(fp, **kwargs):
+    '''Deserialize fp (a .read() supporting file-like object containing a CBOR document) to a
+    Python object.
 
-    The byte stream yields byte strings of arbitrary size.'''
-    decoder = CBORDecoder(bytes_gen, **kwargs)
-    try:
-        decode_item = decoder.decode_item
-        while True:
-            yield decode_item()
-    except CBOREOFError:
-        pass
-
-
-async def aload_stream(bytes_async_gen, **kwargs):
-    '''An asynchronous generator of top-level decoded CBOR objects reading from a byte stream.
-
-    The byte stream asynchronously yields byte strings of arbitrary size.
+    kwargs: arguments to pass to CBORDecoder
     '''
-    decoder = CBORDecoder(bytes_async_gen, **kwargs)
-    try:
-        async_decode_item = decoder.async_decode_item
-        while True:
-            yield await async_decode_item()
-    except CBOREOFError:
-        pass
+    decoder = CBORDecoder(fp.read, **kwargs)
+    return decoder.decode_item()
+
+
+# def load_stream(bytes_gen, **kwargs):
+#     '''A generator of top-level decoded CBOR objects reading from a byte stream.
+
+#     The byte stream yields byte strings of arbitrary size.'''
+#     decoder = CBORDecoder(bytes_gen, **kwargs)
+#     try:
+#         decode_item = decoder.decode_item
+#         while True:
+#             yield decode_item()
+#     except CBOREOFError:
+#         pass
+
+
+# async def aload_stream(bytes_async_gen, **kwargs):
+#     '''An asynchronous generator of top-level decoded CBOR objects reading from a byte stream.
+
+#     The byte stream asynchronously yields byte strings of arbitrary size.
+#     '''
+#     decoder = CBORDecoder(bytes_async_gen, **kwargs)
+#     try:
+#         async_decode_item = decoder.async_decode_item
+#         while True:
+#             yield await async_decode_item()
+#     except CBOREOFError:
+#         pass

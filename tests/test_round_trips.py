@@ -1,7 +1,6 @@
 import pytest
 
 from cborx import *
-from io import BytesIO
 
 
 @pytest.mark.parametrize("value", (
@@ -25,6 +24,5 @@ from io import BytesIO
 ))
 def test_encode_int(value):
     encoding = CBOREncoder().encode(value)
-    read = BytesIO(encoding).read
-    result = loads(read)
+    result = loads(encoding)
     assert result == value

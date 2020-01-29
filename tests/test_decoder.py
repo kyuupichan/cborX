@@ -1,7 +1,6 @@
 import pytest
 
 from cborx import *
-from io import BytesIO
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -23,8 +22,7 @@ from io import BytesIO
     (-1000, '3903e7'),
 ))
 def test_decode_int(value, encoding):
-    read = BytesIO(bytes.fromhex(encoding)).read
-    result = loads(read)
+    result = loads(bytes.fromhex(encoding))
     assert result == value
 
 
@@ -35,8 +33,7 @@ def test_decode_int(value, encoding):
     ('01' * 24, '5818' + '01' * 24),
 ))
 def test_decode_bytes(value, encoding):
-    read = BytesIO(bytes.fromhex(encoding)).read
-    result = loads(read)
+    result = loads(bytes.fromhex(encoding))
     assert result == bytes.fromhex(value)
 
 
@@ -50,6 +47,13 @@ def test_decode_bytes(value, encoding):
     ('\ud800\udd51'.encode('utf-16', 'surrogatepass').decode('utf-16'), '64f0908591'),
 ))
 def test_decode_string(value, encoding):
-    read = BytesIO(bytes.fromhex(encoding)).read
-    result = loads(read)
+    result = loads(bytes.fromhex(encoding))
     assert result == value
+
+
+def test_loads_bytearray():
+    assert loads(bytearray(bytes.fromhex('6449455446'))) == 'IETF'
+
+
+def test_loads_memoryview():
+    assert loads(memoryview(bytes.fromhex('6449455446'))) == 'IETF'
