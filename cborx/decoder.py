@@ -57,6 +57,10 @@ class CBORDecoder:
             self.decode_negative_int,
             self.decode_byte_string,
             self.decode_text_string,
+            self.decode_list,
+            self.decode_dict,
+            self.decode_tag,
+            self.decode_simple
         )
 
     def decode_length(self, first_byte):
@@ -82,8 +86,8 @@ class CBORDecoder:
             elif first_byte == 0xff:
                 break
             else:
-                raise CBORDecodingError(f'invalid item with initial byte {first_byte} '
-                                        f'in indefinite-length byte string')
+                raise CBORDecodingError(f'CBOR object with initial byte {first_byte} '
+                                        f'invalid in indefinite-length byte string')
 
     def decode_byte_string(self, first_byte):
         length = self.decode_length(first_byte)
@@ -99,8 +103,8 @@ class CBORDecoder:
             elif first_byte == 0xff:
                 break
             else:
-                raise CBORDecodingError(f'invalid item with initial byte {first_byte} '
-                                        f'in indefinite-length text string')
+                raise CBORDecodingError(f'CBOR object with initial byte {first_byte} '
+                                        f'invalid in indefinite-length text string')
 
     def decode_text_string(self, first_byte):
         length = self.decode_length(first_byte)
@@ -108,6 +112,28 @@ class CBORDecoder:
             return ''.join(self._text_string_parts())
         utf8_bytes = self._read_safe(length)
         return utf8_bytes.decode()
+
+    def _list_parts(self):
+        self._il_nesting += 1
+        decode_item = self.decode_item
+        while True:
+            yield decode_item()
+
+    def decode_list(self, first_byte):
+        length = self.decode_length(first_byte)
+        if length is None:
+            return list(self._list_parts())
+        decode_item = self.decode_item
+        return [decode_item() for _ in range(length)]
+
+    def decode_dict(self, first_byte):
+        raise NotImplementedError
+
+    def decode_tag(self, first_byte):
+        raise NotImplementedError
+
+    def decode_simple(self, first_byte):
+        raise NotImplementedError
 
     def _read_safe(self, n):
         result = self._read(n)
