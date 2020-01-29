@@ -68,7 +68,7 @@ class CBORDecoder:
             length, = uint_unpackers[kind](self._read_safe(1 << kind))
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
-            return -1
+            return None
         raise CBORDecodingError(f'ill-formed CBOR object with initial byte {first_byte}')
 
     def decode_negative_int(self, first_byte):
@@ -87,7 +87,7 @@ class CBORDecoder:
 
     def decode_byte_string(self, first_byte):
         length = self.decode_length(first_byte)
-        if length == -1:
+        if length is None:
             return b''.join(self._byte_string_parts())
         return self._read_safe(length)
 
@@ -104,7 +104,7 @@ class CBORDecoder:
 
     def decode_text_string(self, first_byte):
         length = self.decode_length(first_byte)
-        if length == -1:
+        if length is None:
             return ''.join(self._text_string_parts())
         utf8_bytes = self._read_safe(length)
         return utf8_bytes.decode()
