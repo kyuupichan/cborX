@@ -32,9 +32,23 @@ def test_decode_int(value, encoding):
     ('01' * 23, '57' + '01' * 23),
     ('01' * 24, '5818' + '01' * 24),
 ))
-def test_decode_bytes(value, encoding):
+def test_decode_byte_string(value, encoding):
     result = loads(bytes.fromhex(encoding))
     assert result == bytes.fromhex(value)
+
+
+def test_decode_indefinite_length_byte_string():
+    parts = [b'the ', b'quick ', b'brown ', b'', b'fox jumped']
+    encoding = CBOREncoder().encode(CBORILByteString(iter(parts)))
+    result = loads(encoding)
+    assert result == b''.join(parts)
+
+
+def test_decode_indefinite_length_text_string():
+    parts = ['the ', 'quick ', 'brown ', '', 'fox jumped']
+    encoding = CBOREncoder().encode(CBORILTextString(iter(parts)))
+    result = loads(encoding)
+    assert result == ''.join(parts)
 
 
 @pytest.mark.parametrize("value, encoding", (

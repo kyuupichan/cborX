@@ -33,17 +33,16 @@ from cborx.types import CBOREOFError
 
 
 # TODO:
-# Handle indefinite-length decodings
+# Test: nested indefinite-length byte string and other crud
+# Test: nested indefinite-length text string and other crud
+# Test: undetermined initial bytes
+# Test: misplaced break
+# Test: ill-formed indefinite-length text string composed of two incomplete UTF-8 pieces
+# Handle indefinite-length list
+# Handle indefinite-length map
+# Handle / test misplaced break
 # Handle non-minimal integer / length decodings
 # Handle decoding value-shared encodings
-
-
-class CBORBreak(Exception):
-    pass
-
-
-class CBORIndefiniteLength(Exception):
-    pass
 
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
@@ -69,26 +68,44 @@ class CBORDecoder:
             length, = uint_unpackers[kind](self._read_safe(1 << kind))
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
-            raise CBORIndefiniteLength   # byte string, text string, list, dict
-        if first_byte == 0xff:
-            raise CBORBreak
-        raise CBORDecodingError(f'ill-formed CBOR with initial byte {first_byte}')
+            return -1
+        raise CBORDecodingError(f'ill-formed CBOR object with initial byte {first_byte}')
 
     def decode_negative_int(self, first_byte):
         return -1 - self.decode_length(first_byte)
 
+    def _byte_string_parts(self):
+        while True:
+            first_byte = ord(self._read_safe(1))
+            if 0x40 <= first_byte < 0x5f:
+                yield self.decode_byte_string(first_byte)
+            elif first_byte == 0xff:
+                break
+            else:
+                raise CBORDecodingError(f'invalid item with initial byte {first_byte} '
+                                        f'in indefinite-length byte string')
+
     def decode_byte_string(self, first_byte):
-        try:
-            length = self.decode_length(first_byte)
-        except CBORIndefiniteLength:
-            raise FIXME
+        length = self.decode_length(first_byte)
+        if length == -1:
+            return b''.join(self._byte_string_parts())
         return self._read_safe(length)
 
+    def _text_string_parts(self):
+        while True:
+            first_byte = ord(self._read_safe(1))
+            if 0x60 <= first_byte < 0x6f:
+                yield self.decode_text_string(first_byte)
+            elif first_byte == 0xff:
+                break
+            else:
+                raise CBORDecodingError(f'invalid item with initial byte {first_byte} '
+                                        f'in indefinite-length text string')
+
     def decode_text_string(self, first_byte):
-        try:
-            length = self.decode_length(first_byte)
-        except CBORIndefiniteLength:
-            raise FIXME
+        length = self.decode_length(first_byte)
+        if length == -1:
+            return ''.join(self._text_string_parts())
         utf8_bytes = self._read_safe(length)
         return utf8_bytes.decode()
 
