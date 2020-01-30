@@ -28,7 +28,9 @@ from cborx import *
     {1: 2},
     {'a': 'b', b'a': b'b'},
     {(1, 2): [3, 4]},
+    {(1, (2, 3)): [4, 5]},
     FrozenDict( [(1, {3: 5})] ),
+    FrozenDict( [(FrozenDict(a=(1, 2)), 3)] ),
     {FrozenDict(a='b'): 5},
 ))
 def test_encode_int(value):

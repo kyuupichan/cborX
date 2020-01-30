@@ -96,6 +96,27 @@ def test_decode_list(value, encoding):
     assert result == value
 
 
+@pytest.mark.parametrize("value, expected", (
+    (CBORILList(iter(())), []),
+    (CBORILList(iter((1, [2, 3], CBORILList(iter([4, 5]))))), [1, [2, 3], [4, 5]]),
+    ([1, CBORILList(iter([2, 3])), [4, 5]], [1, [2, 3], [4, 5]]),
+))
+def test_decode_indefinite_length_list(value, expected):
+    encoding = dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False)
+    result = loads(encoding)
+    assert result == expected
+
+
+@pytest.mark.parametrize("value, expected", (
+    (CBORILDict(iter(())), {}),
+    (CBORILDict(iter( [((1, 2), (3, 4))])), {(1, 2): [3, 4]}),
+))
+def test_decode_indefinite_length_dict(value, expected):
+    encoding = dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False)
+    result = loads(encoding)
+    assert result == expected
+
+
 @pytest.mark.parametrize("encoding", [
     'ff',
     '8301ff03',

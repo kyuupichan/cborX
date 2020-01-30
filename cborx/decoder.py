@@ -129,7 +129,6 @@ class CBORDecoder:
     def decode_list(self, first_byte, flags):
         length = self.decode_length(first_byte)
         cls = tuple if flags & CBORFlags.IMMUTABLE else list
-        flags &=  ~CBORFlags.IMMUTABLE
         if length is None:
             return cls(self._list_parts(flags))
         decode_item = self.decode_item
@@ -150,7 +149,6 @@ class CBORDecoder:
     def decode_dict(self, first_byte, flags):
         length = self.decode_length(first_byte)
         cls = FrozenDict if flags & CBORFlags.IMMUTABLE else dict
-        flags &=  ~CBORFlags.IMMUTABLE
         if length is None:
             return cls(self._dict_parts(flags))
         decode_item = self.decode_item
