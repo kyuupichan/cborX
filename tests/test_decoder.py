@@ -71,3 +71,12 @@ def test_loads_bytearray():
 
 def test_loads_memoryview():
     assert loads(memoryview(bytes.fromhex('6449455446'))) == 'IETF'
+
+
+@pytest.mark.parametrize("value, encoding", [
+    'ff',
+], ids = [
+    'lone break',
+    'definite length list',
+])
+def test_bad_break():
