@@ -159,14 +159,10 @@ def _indefinite_dict():
      bytes.fromhex('826161bf61626163ff')),
     (CBORILDict(iter([('Fun', True), ('Amt', -2)])),
      bytes.fromhex('bf6346756ef563416d7421ff')),
-    (CBORUndefined(), b'\xf7'),
+    (Undefined, b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
     assert dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False) == encoding
-
-
-def test_undefined_singleton():
-    assert CBORUndefined() is CBORUndefined()
 
 
 def test_namedtuple():
@@ -361,9 +357,6 @@ def test_array_fail():
 
 @pytest.mark.parametrize('value, expected', [
     (CBORSimple(0), 'e0'),
-    (CBORSimple(22), 'f6'),
-    (CBORSimple(23), 'f7'),
-    (CBORSimple(31), 'ff'),
     (CBORSimple(32), 'f820'),
     (CBORSimple(255), 'f8ff'),
 ])

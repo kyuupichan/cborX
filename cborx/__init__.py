@@ -7,7 +7,7 @@ from cborx.encoder import (
     CBOREncoder, CBORDateTimeStyle, CBORFloatStyle, CBORSortMethod,
 )
 from cborx.types import (
-    CBORUndefined, CBORSimple, CBORTag,
+    Undefined, CBORSimple, CBORTag,
     CBORError, CBOREncodingError, CBORDecodingError,
     CBORILObject, CBORILByteString, CBORILTextString, CBORILList, CBORILDict,
     FrozenDict,

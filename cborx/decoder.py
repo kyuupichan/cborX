@@ -30,10 +30,11 @@ from io import BytesIO
 
 
 from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64
-from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict
+from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict, CBORSimple
 
 
 # TODO:
+# Decoding of floats
 # Handle non-minimal integer / length decodings
 # Handle decoding value-shared encodings
 
@@ -155,8 +156,21 @@ class CBORDecoder:
         raise NotImplementedError
 
     def decode_simple(self, first_byte, flags):
-        length = self.decode_length(first_byte)
-        raise NotImplementedError
+        value = first_byte & 0x1f
+        if value < 20 or value > 31:
+            return CBORSimple(value)
+        if value < 24:
+            return CBORSimple.assigned_values[value]
+        if value == 24:
+            value = ord(self._read_safe(1))
+            if value < 32:
+                raise CBORDecodingError(f'simple value {value} ecnoded with extension byte')
+            return CBORSimple(value)
+        if value < 28:
+            return self.decode_float(1 << (value - 24))
+        if value == 31:
+            raise CBORDecodingError('CBOR break outside indefinite-length object')
+        self.decode_length(first_byte)  # Raises as unassigned
 
     def _read_safe(self, n):
         result = self._read(n)

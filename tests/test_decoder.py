@@ -132,7 +132,7 @@ def test_decode_indefinite_length_dict(value, expected):
     'indefinite map value',
 ])
 def test_misplaced_break(encoding):
-    with pytest.raises(CBORDecodingError, match='0xff'):
+    with pytest.raises(CBORDecodingError, match='CBOR break outside indefinite-length object'):
         loads(bytes.fromhex(encoding))
 
 
@@ -208,7 +208,7 @@ def test_bad_il_byte_string(encoding):
     '9c', '9d', '9e',
     'bc', 'bd', 'be',
     # 'dc', 'dd', 'de', 'df',
-    # 'fc', 'fd', 'fe', 'ff',
+    'fc', 'fd', 'fe',
 ])
 def test_unassigned(encoding):
     with pytest.raises(CBORDecodingError, match='ill-formed CBOR object with initial byte '):
@@ -223,7 +223,7 @@ def test_unassigned(encoding):
     '5f',   # missing byte string
     '78', '7900', '7a000000', '7b00000000000000',  # length truncated
     '7801', '790001', '7a00000001', '7b0000000000000001',  # payload truncated
-    '7f',   # missing tex string
+    '7f',   # missing text string
     '98', '9900', '9a000000', '9b00000000000000',
     '9801', '990001', '9a00000001', '9b0000000000000001',  # missing item
     '9f',   # missing item
@@ -231,9 +231,16 @@ def test_unassigned(encoding):
     'b801', 'b90001', 'ba00000001', 'bb0000000000000001',  # missing key-value pair
     'b80100', 'b9000100', 'ba0000000100', 'bb000000000000000100',  # missing value
     'bf',   'bf00',
+    'f8',  # missing payload
 ])
 def test_truncated(encoding):
     with pytest.raises(CBORDecodingError, match='need '):
+        loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding", ['f800', 'f81f'])
+def test_invalid_simple(encoding):
+    with pytest.raises(CBORDecodingError, match='simple value '):
         loads(bytes.fromhex(encoding))
 
 

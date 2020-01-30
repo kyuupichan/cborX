@@ -67,33 +67,40 @@ class CBORTag:
         return encode_length(self._tag, 0xc0) + encoder.encode_item(self._value)
 
 
+class CBORUndefined:
+
+    def __encode_cbor__(self, encoder):
+        return b'\xf7'
+
+
+# A singleton
+Undefined = CBORUndefined()
+
+
 class CBORSimple:
+
+    assigned_values = {
+        20: False,
+        21: True,
+        22: None,
+        23: Undefined,
+    }
 
     def __init__(self, value):
         if not isinstance(value, int):
             raise TypeError(f'simple value {value} must be an integer')
-        if not 0 <= value < 256 or (24 <= value < 31):
+        if not ((0 <= value <= 19) or (32 <= value <= 255)):
             raise ValueError(f'simple value {value} out of range')
         self._value = value
+
+    def __eq__(self, other):
+        return isinstance(other, CBORSimple) and self._value == other._value
 
     def __encode_cbor__(self, encoder):
         if self._value <= 31:
             return pack_byte(0xe0 + self._value)
         else:
             return b'\xf8' + pack_byte(self._value)
-
-
-class CBORUndefined:
-
-    __instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if not cls.__instance:
-            cls.__instance = super().__new__(cls, *args, **kwargs)
-        return cls.__instance
-
-    def __encode_cbor__(self, encoder):
-        return b'\xf7'
 
 
 class CBORILObject:
@@ -150,7 +157,6 @@ class CBORILDict(CBORILObject):
 class FrozenDict(Mapping):
 
     def __init__(self, *args, **kwargs):
-        print(args)
         d = dict(*args, **kwargs)
         self._dict = d
         self.__contains__ == d.__contains__

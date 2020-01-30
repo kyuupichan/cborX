@@ -41,7 +41,7 @@ from cborx.packing import (
     pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
 from cborx.types import (
-    FrozenDict, CBORTag, CBOREncodingError, CBORSimple, encode_length, bjoin, sjoin
+    FrozenDict, CBORTag, CBOREncodingError, encode_length, bjoin, sjoin
 )
 
 # TODO:

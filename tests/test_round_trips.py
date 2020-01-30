@@ -32,6 +32,15 @@ from cborx import *
     FrozenDict( [(1, {3: 5})] ),
     FrozenDict( [(FrozenDict(a=(1, 2)), 3)] ),
     {FrozenDict(a='b'): 5},
+    CBORSimple(0),
+    CBORSimple(19),
+    CBORSimple(32),
+    CBORSimple(255),
+    True,
+    False,
+    None,
+    Undefined,
+    [True, False, None, Undefined],
 ))
 def test_encode_int(value):
     encoding = CBOREncoder().encode(value)
