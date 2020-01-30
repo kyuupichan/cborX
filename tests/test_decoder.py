@@ -270,6 +270,17 @@ def test_truncated(encoding):
         loads(bytes.fromhex(encoding))
 
 
+@pytest.mark.parametrize("encoding, match", [
+    ('c000', 'date and time is not text'),
+    ('c06161', 'invalid date and time text'),
+    ('c140', 'timestamp is not an integer or float'),
+    ('c160', 'timestamp is not an integer or float'),
+])
+def test_invalid_tagged(encoding, match):
+    with pytest.raises(CBORDecodingError, match=match):
+        loads(bytes.fromhex(encoding))
+
+
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])
 def test_invalid_simple(encoding):
     with pytest.raises(CBORDecodingError, match='simple value '):

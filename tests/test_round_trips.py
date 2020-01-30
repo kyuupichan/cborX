@@ -1,4 +1,5 @@
 import math
+from datetime import date, datetime, timezone, timedelta
 
 import pytest
 
@@ -47,9 +48,24 @@ from cborx import *
     1.1,
     math.inf,
     -math.inf,
+    date(2004, 1, 29),
+    datetime(2004, 1, 29, 1, 2, 3, 46, timezone.utc),
+    datetime(1904, 1, 29, 1, 2, 3, 46, timezone(timedelta(seconds=60))),
+    datetime(2004, 1, 29, 1, 2, 3, 46, timezone(timedelta(seconds=-60))),
+    CBORTag(100, 'foo'),
 ))
 def test_round_trip(value):
     encoding = dumps(value)
+    result = loads(encoding)
+    assert result == value
+
+
+@pytest.mark.parametrize("value", [
+    datetime(2004, 1, 29, 1, 2, 3, 46, timezone.utc),
+    datetime(2004, 1, 29, 1, 2, 3, 46, timezone(timedelta(seconds=60))),
+])
+def test_timestamp_text_round_trip(value):
+    encoding = dumps(value, datetime_style=CBORDateTimeStyle.ISO_WITH_Z)
     result = loads(encoding)
     assert result == value
 

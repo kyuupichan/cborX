@@ -25,6 +25,8 @@
 
 '''CBOR decoding.'''
 
+import re
+from datetime import datetime, date, timezone, time, timedelta
 from enum import IntEnum
 from io import BytesIO
 
@@ -33,11 +35,11 @@ from cborx.packing import (
     unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64,
     unpack_be_float2, unpack_be_float4, unpack_be_float8,
 )
-from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict, CBORSimple
+from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict, CBORSimple, CBORTag
+from cborx.util import datetime_from_enhanced_RFC3339_text
 
 
 # TODO:
-# Handle tags
 # Handle non-minimal integer / length / float decodings
 # Handle decoding value-shared encodings
 
@@ -48,6 +50,20 @@ class CBORFlags(IntEnum):
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
 be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
+tag_decoders = {
+    0: 'decode_datetime_text',
+    1: 'decode_timestamp',
+    # 4:
+    # 28:
+    # 29:
+    # 30:
+    # 35:
+    # 37:
+    # 258:
+    # 260:
+    # 261:
+    # 272:
+}
 
 
 class CBORDecoder:
@@ -157,7 +173,14 @@ class CBORDecoder:
                    for _ in range(length))
 
     def decode_tag(self, first_byte, flags):
-        raise NotImplementedError
+        tag_value = self.decode_length(first_byte)
+        decoder = tag_decoders.get(tag_value)
+        if decoder is None:
+            return self.on_unknown_tag(tag_value, flags)
+        return getattr(self, decoder)(flags)
+
+    def on_unknown_tag(self, tag_value, flags):
+        return CBORTag(tag_value, self.decode_item(flags))
 
     def decode_simple(self, first_byte, flags):
         value = first_byte & 0x1f
@@ -176,6 +199,22 @@ class CBORDecoder:
         if value == 31:
             raise CBORDecodingError('CBOR break outside indefinite-length object')
         self.decode_length(first_byte)  # Raises as unassigned
+
+    def decode_datetime_text(self, flags):
+        text = self.decode_item(flags)
+        if not isinstance(text, str):
+            raise CBORDecodingError('tagged date and time is not text')
+        try:
+            return datetime_from_enhanced_RFC3339_text(text)
+        except ValueError:
+            raise CBORDecodingError(f'invalid date and time text: {text}')
+
+    def decode_timestamp(self, flags):
+        timestamp = self.decode_item(flags)
+        # NOTE: this admits bignums which should perhaps be disallowed
+        if not isinstance(timestamp, (int, float)):
+            raise CBORDecodingError('tagged timestamp is not an integer or float')
+        return datetime.fromtimestamp(timestamp, timezone.utc)
 
     def _read_safe(self, n):
         result = self._read(n)
