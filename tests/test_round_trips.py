@@ -58,6 +58,8 @@ from cborx import *
     -1_000_000_000_000_000_000_000_000_000,
     Decimal('123.456'),
     Decimal('-67239582.9826398'),
+    Decimal(math.inf),
+    Decimal(-math.inf),
 ))
 def test_round_trip(value):
     encoding = dumps(value)
