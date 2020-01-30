@@ -30,7 +30,7 @@ from io import BytesIO
 
 
 from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64
-from cborx.types import CBOREOFError
+from cborx.types import CBOREOFError, CBORDecodingError
 
 
 # TODO:
@@ -78,7 +78,7 @@ class CBORDecoder:
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
             return None
-        raise CBORDecodingError(f'ill-formed CBOR object with initial byte {first_byte}')
+        raise CBORDecodingError(f'ill-formed CBOR object with initial byte 0x{first_byte:x}')
 
     def decode_uint(self, first_byte, _flags):
         return self.decode_length(first_byte)
@@ -145,6 +145,7 @@ class CBORDecoder:
         raise NotImplementedError
 
     def decode_simple(self, first_byte, flags):
+        length = self.decode_length(first_byte)
         raise NotImplementedError
 
     def _read_safe(self, n):

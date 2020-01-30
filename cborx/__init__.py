@@ -1,11 +1,13 @@
 from cborx.decoder import (
-    loads,
+    load, loads,
+    CBORDecoder,
 )
 from cborx.encoder import (
-    CBOREncoder, CBOREncoderOptions, CBORDateTimeStyle, CBORFloatStyle, CBORSortMethod,
+    dump, dumps,
+    CBOREncoder, CBORDateTimeStyle, CBORFloatStyle, CBORSortMethod,
 )
 from cborx.types import (
     CBORUndefined, CBORSimple, CBORTag,
-    CBORError, CBOREncodingError,
+    CBORError, CBOREncodingError, CBORDecodingError,
     CBORILObject, CBORILByteString, CBORILTextString, CBORILList, CBORILDict,
 )

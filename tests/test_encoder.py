@@ -4,6 +4,7 @@ from collections import namedtuple, defaultdict, Counter, OrderedDict
 from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
 from fractions import Fraction
+from functools import partial
 from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 import re
@@ -35,8 +36,7 @@ from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32
     (-1000, bytes.fromhex('3903e7')),
 ))
 def test_encode_int(value, encoding):
-    e = CBOREncoder()
-    assert e.encode(value) == encoding
+    assert dumps(value) == encoding
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -46,10 +46,9 @@ def test_encode_int(value, encoding):
     (bytes.fromhex('01' * 24), bytes.fromhex('5818' + '01' * 24)),
 ))
 def test_encode_bytes(value, encoding):
-    e = CBOREncoder()
-    assert e.encode(value) == encoding
-    assert e.encode(bytearray(value)) == encoding
-    assert e.encode(memoryview(value)) == encoding
+    assert dumps(value) == encoding
+    assert dumps(bytearray(value)) == encoding
+    assert dumps(memoryview(value)) == encoding
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -63,8 +62,7 @@ def test_encode_bytes(value, encoding):
      bytes.fromhex('64f0908591')),
 ))
 def test_encode_string(value, encoding):
-    e = CBOREncoder()
-    assert e.encode(value) == encoding
+    assert dumps(value) == encoding
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -78,8 +76,7 @@ def test_encode_string(value, encoding):
     (["a", {"b": "c"}], bytes.fromhex('826161a161626163')),
 ))
 def test_encode_list(value, encoding):
-    e = CBOREncoder()
-    assert e.encode(value) == encoding
+    assert dumps(value) == encoding
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -89,8 +86,7 @@ def test_encode_list(value, encoding):
      bytes.fromhex('a56161614161626142616361436164614461656145')),
 ))
 def test_encode_dict(value, encoding):
-    e = CBOREncoder()
-    assert e.encode(value) == encoding
+    assert dumps(value) == encoding
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -115,8 +111,7 @@ def test_encode_dict(value, encoding):
     (-math.inf, bytes.fromhex('f9fc00')),
 ))
 def test_encode_simple(value, encoding):
-    e = CBOREncoder()
-    assert e.encode(value) == encoding
+    assert dumps(value) == encoding
 
 
 def _indefinite_empty():
@@ -167,9 +162,7 @@ def _indefinite_dict():
     (CBORUndefined(), b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
-    o = CBOREncoderOptions(sort_method=CBORSortMethod.UNSORTED, realize_il=False)
-    e = CBOREncoder(options=o)
-    assert e.encode(value) == encoding
+    assert dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False) == encoding
 
 
 def test_undefined_singleton():
@@ -179,8 +172,7 @@ def test_undefined_singleton():
 def test_namedtuple():
     nt = namedtuple('nt', 'a b c')
     value = nt(1, 'bar', [1, 2])
-    e = CBOREncoder()
-    assert e.encode(value) == e.encode(tuple(value))
+    assert dumps(value) == dumps(tuple(value))
 
 
 def test_defaultdict():
@@ -188,14 +180,12 @@ def test_defaultdict():
     d['foo'].append(4)
     d['foo'].append(3)
     d[2].append(1)
-    e = CBOREncoder()
-    assert e.encode(d) == e.encode({'foo': [4, 3], 2: [1]})
+    assert dumps(d) == dumps({'foo': [4, 3], 2: [1]})
 
 
 def test_counter():
     c = Counter(cats=4, dogs=8, bats=12)
-    e = CBOREncoder()
-    assert e.encode(c) == e.encode({'bats': 12, 'cats': 4, 'dogs': 8})
+    assert dumps(c) == dumps({'bats': 12, 'cats': 4, 'dogs': 8})
 
 
 @pytest.mark.parametrize('sort_method, deterministic', [
@@ -206,17 +196,12 @@ def test_counter():
     (CBORSortMethod.LENGTH_FIRST, True),
 ])
 def test_ordered_dict(sort_method, deterministic):
-    if deterministic:
-        o = CBOREncoderOptions.deterministic(sort_method=sort_method)
-    else:
-        o = CBOREncoderOptions(sort_method=sort_method)
-    e = CBOREncoder(o)
     c = OrderedDict()
     c['dogs'] = 8
     c['bats'] = 12
     c['cats'] = 4
-    e = CBOREncoder()
-    assert e.encode(c) == b'\xd9\x01\x10\xa3ddogs\x08dbats\x0cdcats\x04'
+    result = dumps(c, sort_method=sort_method, deterministic=deterministic)
+    assert result == b'\xd9\x01\x10\xa3ddogs\x08dbats\x0cdcats\x04'
 
 
 # Tests from https://github.com/agronholm/cbor2/
@@ -253,8 +238,7 @@ def test_ordered_dict(sort_method, deterministic):
     'timestamp/eet'
 ])
 def test_datetime_explicit_tzinfo(value, style, expected):
-    e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style))
-    result = e.encode(value)
+    result = dumps(value, datetime_style=style)
     assert result == bytes.fromhex(expected)
 
 
@@ -265,11 +249,9 @@ def test_datetime_explicit_tzinfo(value, style, expected):
     'naive',
 ])
 def test_datetime_enoder_tzinfo(value, style, expected):
-    e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style))
     with pytest.raises(CBOREncodingError):
-        e.encode(value)
-    e = CBOREncoder(options=CBOREncoderOptions(datetime_style=style, tzinfo=timezone.utc))
-    result = e.encode(value)
+        dumps(value, datetime_style=style)
+    result = dumps(value, datetime_style=style, tzinfo=timezone.utc)
     assert result == bytes.fromhex(expected)
 
 
@@ -278,8 +260,7 @@ def test_datetime_enoder_tzinfo(value, style, expected):
     (date(1900, 2, 28), 'c06a313930302d30322d3238'),
 ])
 def test_date(value, expected):
-    e = CBOREncoder()
-    result = e.encode(value)
+    result = dumps(value)
     assert result == bytes.fromhex(expected)
 
 
@@ -299,8 +280,7 @@ def test_date(value, expected):
     (Decimal('-inf'),'f9fc00'),
 ])
 def test_date(value, expected):
-    e = CBOREncoder()
-    result = e.encode(value)
+    result = dumps(value)
     assert result == bytes.fromhex(expected)
 
 
@@ -326,8 +306,7 @@ def test_date(value, expected):
     'IPv4 1', 'IPv4 2', 'IPv6 1', 'IPv6 2', 'IPv4 Network 1', 'IPv4 Network 2', 'IPv6 Network',
 ])
 def test_encodings(value, expected):
-    e = CBOREncoder()
-    result = e.encode(value).hex()
+    result = dumps(value).hex()
     assert result == expected
 
 
@@ -341,16 +320,14 @@ def test_encodings(value, expected):
     'set 1LX', 'set 1LF', 'set 2LX', 'set 2LF', 'frozenset'
 ])
 def test_set(value, sort_method, expected):
-    o = CBOREncoderOptions(sort_method=sort_method)
-    e = CBOREncoder(o)
-    result = e.encode(value)
+    result = dumps(value, sort_method=sort_method)
     assert result == bytes.fromhex(expected)
 
 
-def test_default_enconder_options():
-    options = CBOREncoderOptions()
-    assert options.datetime_style == CBORDateTimeStyle.TIMESTAMP
-    assert options.tzinfo is None
+def test_default_encoder_options():
+    e = CBOREncoder()
+    assert e.datetime_style == CBORDateTimeStyle.TIMESTAMP
+    assert e.tzinfo is None
 
 
 @pytest.mark.parametrize('value, expected', [
@@ -372,16 +349,14 @@ def test_default_enconder_options():
     'f array', 'd array',
 ])
 def test_encodings(value, expected):
-    e = CBOREncoder()
-    result = e.encode(value).hex()
+    result = dumps(value).hex()
     assert result == expected
 
 
 def test_array_fail():
     a = array('u', ['a'])
-    e = CBOREncoder()
     with pytest.raises(CBOREncodingError):
-        e.encode(a)
+        dumps(a)
 
 
 @pytest.mark.parametrize('value, expected', [
@@ -393,8 +368,7 @@ def test_array_fail():
     (CBORSimple(255), 'f8ff'),
 ])
 def test_simple(value, expected):
-    e = CBOREncoder()
-    result = e.encode(value).hex()
+    result = dumps(value).hex()
     assert result == expected
 
 @pytest.mark.parametrize('value', [
@@ -405,27 +379,26 @@ def test_simple_fail(value):
         CBORSimple(value)
 
 
-def test_deterministic():
-    o = CBOREncoderOptions.deterministic()
-    e = CBOREncoder(o)
-    for n in range(0, 24):
-        assert e.encode(n) == pack_byte(n)
-    for n in range(-23, 0):
-        assert e.encode(n) == pack_byte(0x20 + (-1 - n))
-    for n in range(24, 256):
-        assert e.encode(n) == b'\x18' + pack_byte(n)
-    for n in range(-256, -24):
-        assert e.encode(n) == b'\x38' + pack_byte(-1 - n)
-    assert e.encode(256) == b'\x19' + pack_be_uint16(256)
-    assert e.encode(65535) == b'\x19' + pack_be_uint16(65535)
-    assert e.encode(-257) == b'\x39' + pack_be_uint16(256)
-    assert e.encode(-65536) == b'\x39' + pack_be_uint16(65535)
-    assert e.encode(65536) == b'\x1a' + pack_be_uint32(65536)
-    assert e.encode(4294967295) == b'\x1a' + pack_be_uint32(4294967295)
-    assert e.encode(-65537) == b'\x3a' + pack_be_uint32(65536)
-    assert e.encode(-4294967296) == b'\x3a' + pack_be_uint32(4294967295)
-    assert e.encode(1.5) == bytes.fromhex('f93e00')
-    assert e.encode(1000000.5) == bytes.fromhex('fa49742408')
+@pytest.mark.parametrize('value, expected', (
+    list((n, pack_byte(n)) for n in range(24)) +
+    list((n, pack_byte(0x20 + (-1-n))) for n in range(-23, 0)) +
+    list((n, b'\x18' + pack_byte(n)) for n in range(24, 256)) +
+    list((n, b'\x38' + pack_byte(-1 - n)) for n in range(-256, -24)) +
+    [
+        (256, b'\x19' + pack_be_uint16(256)),
+        (65535, b'\x19' + pack_be_uint16(65535)),
+        (-257, b'\x39' + pack_be_uint16(256)),
+        (-65536, b'\x39' + pack_be_uint16(65535)),
+        (65536, b'\x1a' + pack_be_uint32(65536)),
+        (4294967295, b'\x1a' + pack_be_uint32(4294967295)),
+        (-65537, b'\x3a' + pack_be_uint32(65536)),
+        (-4294967296, b'\x3a' + pack_be_uint32(4294967295)),
+        (1.5, bytes.fromhex('f93e00')),
+        (1000000.5, bytes.fromhex('fa49742408')),
+    ]
+))
+def test_deterministic(value, expected):
+    assert dumps(value, deterministic=True) == expected
 
 
 @pytest.mark.parametrize('value', [
@@ -435,30 +408,26 @@ def test_deterministic():
     (('foo', 2), ('bar', -15)),
 ])
 def test_deterministic_IL(value):
-    o = CBOREncoderOptions.deterministic()
-    e = CBOREncoder(o)
+    dumpsd = partial(dumps, deterministic=True)
     if all(isinstance(item, bytes) for item in value):
-        assert e.encode(CBORILByteString(iter(value))) == e.encode(b''.join(value))
+        assert dumpsd(CBORILByteString(iter(value))) == dumpsd(b''.join(value))
     elif all(isinstance(item, str) for item in value):
-        assert e.encode(CBORILTextString(iter(value))) == e.encode(''.join(value))
+        assert dumpsd(CBORILTextString(iter(value))) == dumpsd(''.join(value))
     elif all(isinstance(item, tuple) for item in value):
-        assert e.encode(CBORILDict(iter(value))) == e.encode(
-            {key: kvalue for key, kvalue in value})
+        assert dumpsd(CBORILDict(iter(value))) == dumpsd({key: kvalue for key, kvalue in value})
     else:
-        assert e.encode(CBORILList(iter(value))) == e.encode(value)
+        assert dumpsd(CBORILList(iter(value))) == dumpsd(value)
 
 
-@pytest.mark.parametrize('method, expected', [
+@pytest.mark.parametrize('sort_method, expected', [
     (CBORSortMethod.UNSORTED, 'a8626161f6617af61864f68120f620f6811864f6f4f60af6'),
     (CBORSortMethod.LEXICOGRAPHIC, 'a80af61864f620f6617af6626161f6811864f68120f6f4f6'),
     (CBORSortMethod.LENGTH_FIRST, 'a80af620f6f4f61864f6617af68120f6626161f6811864f6'),
 ])
-def test_sorting(method, expected):
+def test_sorting(sort_method, expected):
     items = ['aa', 'z', 100, (-1, ), -1, (100, ), False, 10]
     d = {key: None for key in items}
-    o = CBOREncoderOptions(sort_method=method)
-    e = CBOREncoder(o)
-    result = e.encode(d).hex()
+    result = dumps(d, sort_method=sort_method).hex()
     assert result == expected
 
 
@@ -469,9 +438,7 @@ def test_sorting(method, expected):
 ])
 def test_float_style(float_style, expected):
     items = [8.9, 1.5, math.inf, -math.inf, math.nan]
-    o = CBOREncoderOptions(float_style=float_style)
-    e = CBOREncoder(o)
-    result = e.encode(items).hex()
+    result = dumps(items, float_style=float_style).hex()
     assert result == expected
 
 
@@ -483,25 +450,21 @@ array3 = [string1] * 6
 @pytest.mark.parametrize('value, shared_types, expected', [
     (array2, (), '8582016d61206c6f6e6720737472696e676d61206c6f6e6720737472696e6782016d6'
      '1206c6f6e6720737472696e670482016d61206c6f6e6720737472696e67'),
-    (array2, CBOREncoderOptions.SHARED_TYPES,
+    (array2, CBOREncoder.SHARED_TYPES,
      'd81c85d81c82016d61206c6f6e6720737472696e676d61206c6f6e6720737472696e67d81d0104d81d01'),
     (array2, {str}, '858201d81c6d61206c6f6e6720737472696e67d81d008201d81d00048201d81d00'),
     (array2, {str, list}, 'd81c85d81c8201d81c6d61206c6f6e6720737472696e67d81d02d81d0104d81d01'),
     (array3, {str}, '86d81c6d61206c6f6e6720737472696e67d81d00d81d00d81d00d81d00d81d00'),
 ])
 def test_shared_types(value, shared_types, expected):
-    o = CBOREncoderOptions(shared_types=shared_types)
-    e = CBOREncoder(o)
-    result = e.encode(value).hex()
+    result = dumps(value, shared_types=shared_types).hex()
     assert result == expected
 
 
 def test_recursive_type():
-    o = CBOREncoderOptions(shared_types={list,dict})
-    e = CBOREncoder(o)
     a = [1, 2]
     b = [3, 4]
     a.append(b)
     b.append(a)
-    result = e.encode(a)
+    result = dumps(a, shared_types={list, dict})
     assert result == bytes.fromhex('d81c83 0102 d81c83 0304d81d00')

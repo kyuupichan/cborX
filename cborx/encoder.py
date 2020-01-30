@@ -86,39 +86,26 @@ def sorted_items(encoded_items_gen, method):
         return list(encoded_items_gen)
 
 
-class CBOREncoderOptions:
-    '''Controls encoder behaviour.'''
+class CBOREncoder:
 
     SHARED_TYPES = {tuple, list, dict, OrderedDict}
 
     def __init__(self, *, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
                  float_style = CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
-                 realize_il=True, shared_types=()):
-        # In Python bignums and integers are indistinguishable
+                 realize_il=True, shared_types=(), deterministic=False):
+        if deterministic:
+            if sort_method == CBORSortMethod.UNSORTED:
+                raise ValueError('a deterministic encoder requires sorting')
+            realize_il = True
+        # Note: in Python bignums and integers are indistinguishable
         self.tzinfo = tzinfo
         self.datetime_style = datetime_style
         self.float_style = float_style
         self.sort_method = sort_method
         self.realize_il = realize_il
         self.shared_types = shared_types
-
-    @classmethod
-    def deterministic(cls, **kwargs):
-        if kwargs.get('sort_method') == CBORSortMethod.UNSORTED:
-            raise ValueError('a deterministic encoder requires sorting')
-        kwargs['realize_il'] = True
-        return cls(**kwargs)
-
-
-default_encoder_options = CBOREncoderOptions()
-
-
-class CBOREncoder:
-
-    def __init__(self, options=default_encoder_options):
-        assert isinstance(default_encoder_options, CBOREncoderOptions)
+        # Implementation details
         self._encode_funcs = {}
-        self._options = options
         self._shared_id = itertools.count()
         self._shared_ids = {}
 
@@ -149,7 +136,7 @@ class CBOREncoder:
                         break
                 else:
                     raise CBOREncodingError(f'do not know how to encode object of type {vtype}')
-        if used_type in self._options.shared_types:
+        if used_type in self.shared_types:
             encode_func = partial(self._encode_shared, encode_func)
         self._encode_funcs[vtype] = encode_func
         return encode_func
@@ -183,7 +170,7 @@ class CBOREncoder:
         length = encode_length(len(value), 0x80)
         encode_item = self.encode_item
         encoded_items_gen = (encode_item(item) for item in value)
-        return length + bjoin(sorted_items(encoded_items_gen, self._options.sort_method))
+        return length + bjoin(sorted_items(encoded_items_gen, self.sort_method))
 
     def encode_sorted_dict(self, kv_pairs, sort_method):
         encode_item = self.encode_item
@@ -193,7 +180,7 @@ class CBOREncoder:
                               for encoded_key, value in sorted_pairs(pairs_gen, sort_method))
 
     def encode_dict(self, value):
-        return self.encode_sorted_dict(value.items(), self._options.sort_method)
+        return self.encode_sorted_dict(value.items(), self.sort_method)
 
     def encode_ordered_dict(self, value):
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
@@ -211,7 +198,7 @@ class CBOREncoder:
 
     def encode_float(self, value):
         '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
-        if self._options.float_style == CBORFloatStyle.SHORTEST:
+        if self.float_style == CBORFloatStyle.SHORTEST:
             return self.encode_shortest_float(value)
         else:
             return self.encode_double_float(value)
@@ -247,14 +234,13 @@ class CBOREncoder:
 
     def encode_datetime(self, value):
         assert isinstance(value, datetime)
-        options = self._options
         if not value.tzinfo:
-            if options.tzinfo:
-                value = value.replace(tzinfo=options.tzinfo)
+            if self.tzinfo:
+                value = value.replace(tzinfo=self.tzinfo)
             else:
                 raise CBOREncodingError('specify tzinfo option to encode a datetime '
                                         'without tzinfo')
-        if options.datetime_style == CBORDateTimeStyle.TIMESTAMP:
+        if self.datetime_style == CBORDateTimeStyle.TIMESTAMP:
             tag = self.encode_tag(1)
             value = value.timestamp()
             int_value = int(value)
@@ -264,7 +250,7 @@ class CBOREncoder:
                 return tag + self.encode_float(value)
         else:
             text = value.isoformat()
-            if options.datetime_style == CBORDateTimeStyle.ISO_WITH_Z:
+            if self.datetime_style == CBORDateTimeStyle.ISO_WITH_Z:
                 text = text.replace('+00:00', 'Z')
             return self.encode_tag(0) + self.encode_text_string(text)
 
@@ -369,3 +355,20 @@ default_encode_funcs = {
     IPv4Network: 'encode_ip_network',
     IPv6Network: 'encode_ip_network',
 }
+
+
+def dumps(obj, **kwargs):
+    '''Serialize obj to a CBOR-formatted bytes object.
+
+    kwargs: arguments to pass to CBOREncoder
+    '''
+    e = CBOREncoder(**kwargs)
+    return e.encode(obj)
+
+
+def dump(obj, fp, **kwargs):
+    '''Serialize obj to fp (a .write() supporting file-like object).
+
+    kwargs: arguments to pass to CBOREncoder
+    '''
+    fp.write(dumps(obj, **kwargs))

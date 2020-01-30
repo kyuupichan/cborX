@@ -106,7 +106,7 @@ class CBORILByteString(CBORILObject):
 
     def __encode_cbor__(self, encoder):
         encode_byte_string = encoder.encode_byte_string
-        if encoder._options.realize_il:
+        if encoder.realize_il:
             return encode_byte_string(bjoin(self.generator))
         else:
             parts = (encode_byte_string(byte_string) for byte_string in self.generator)
@@ -117,7 +117,7 @@ class CBORILTextString(CBORILObject):
 
     def __encode_cbor__(self, encoder):
         encode_text_string = encoder.encode_text_string
-        if encoder._options.realize_il:
+        if encoder.realize_il:
             return encode_text_string(sjoin(self.generator))
         else:
             parts = (encode_text_string(text_string) for text_string in self.generator)
@@ -127,7 +127,7 @@ class CBORILTextString(CBORILObject):
 class CBORILList(CBORILObject):
 
     def __encode_cbor__(self, encoder):
-        if encoder._options.realize_il:
+        if encoder.realize_il:
             return encoder.encode_sorted_list(tuple(self.generator))
         else:
             encode_item = encoder.encode_item
@@ -138,9 +138,8 @@ class CBORILList(CBORILObject):
 class CBORILDict(CBORILObject):
 
     def __encode_cbor__(self, encoder):
-        if encoder._options.realize_il:
-            return encoder.encode_sorted_dict(tuple(self.generator),
-                                              encoder._options.sort_method)
+        if encoder.realize_il:
+            return encoder.encode_sorted_dict(tuple(self.generator), encoder.sort_method)
         else:
             encode_item = encoder.encode_item
             parts = (encode_item(key) + encode_item(kvalue) for key, kvalue in self.generator)

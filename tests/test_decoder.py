@@ -73,10 +73,13 @@ def test_loads_memoryview():
     assert loads(memoryview(bytes.fromhex('6449455446'))) == 'IETF'
 
 
-@pytest.mark.parametrize("value, encoding", [
+@pytest.mark.parametrize("encoding", [
     'ff',
+    '8301ff03',
 ], ids = [
     'lone break',
     'definite length list',
 ])
-def test_bad_break():
+def test_decode_bad_break(encoding):
+    with pytest.raises(CBORDecodingError, match='0xff'):
+        loads(bytes.fromhex(encoding))
