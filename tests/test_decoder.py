@@ -37,16 +37,24 @@ def test_decode_byte_string(value, encoding):
     assert result == bytes.fromhex(value)
 
 
-def test_decode_indefinite_length_byte_string():
-    parts = [b'the ', b'quick ', b'brown ', b'', b'fox jumped']
-    encoding = CBOREncoder().encode(CBORILByteString(iter(parts)))
-    result = loads(encoding)
-    assert result == b''.join(parts)
+@pytest.mark.parametrize("encoding, expected", (
+    # [b'the ', b'quick ', b'brown ', b'', b'fox jumped']
+    ('5f 4474686520 46717569636b20 4662726f776e20 40 4a666f78206a756d706564 ff',
+     b'the quick brown fox jumped'),
+    # [b'the'] encoded non-minimally
+    ('5f 5803 746865ff', b'the'),
+    ('5f 590003 746865ff', b'the'),
+    ('5f 5a00000003 746865ff', b'the'),
+    ('5f 5b0000000000000003 746865ff', b'the'),
+))
+def test_decode_indefinite_length_byte_string(encoding, expected):
+    result = loads(bytes.fromhex(encoding))
+    assert result == expected
 
 
 @pytest.mark.parametrize("encoding, expected", (
     # ['the ', 'quick ', 'brown ', '', 'fox jumped']
-    ('7f647468652066717569636b206662726f776e20606a666f78206a756d706564ff',
+    ('7f 6474686520 66717569636b20 6662726f776e20 60 6a666f78206a756d706564 ff',
      'the quick brown fox jumped'),
     # ['the'] encoded non-minimally
     ('7f 7803 746865ff', 'the'),
@@ -125,6 +133,38 @@ def test_misplaced_break(encoding):
     'tag-0',
     'simple-0',
 ])
-def test_bad_il_teststring(encoding):
+def test_bad_il_text_string(encoding):
+    with pytest.raises(CBORDecodingError, match='invalid in indefinite-length text string'):
+        loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding", [
+    '5f01ff',      # _ 1
+    '5f616101ff',  # _ 'a' 1
+    '5f20ff',      # _ -1
+    '5f60ff',      # _ ''
+    '5f5cff',      # _ reserved
+    '5f5dff',      # _ reserved
+    '5f5eff',      # _ reserved
+    '5f5fff',      # _ IL byte string
+    '5f80ff',      # _ []
+    '5fa0ff',      # _ []
+    '5fc0ff',      # _ Tag0
+    '5fe0ff',      # _ Simple(0)
+], ids = [
+    '1',
+    'a 1',
+    '-1',
+    "''",
+    'reserved 1',
+    'reserved 2',
+    'reserved 3',
+    'IL byte string',
+    '[]',
+    '{}',
+    'tag-0',
+    'simple-0',
+])
+def test_bad_il_byte_string(encoding):
     with pytest.raises(CBORDecodingError, match='invalid in indefinite-length'):
         loads(bytes.fromhex(encoding))

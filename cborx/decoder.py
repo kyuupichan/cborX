@@ -34,7 +34,6 @@ from cborx.types import CBOREOFError, CBORDecodingError
 
 
 # TODO:
-# Test: nested indefinite-length byte string and other crud
 # Test: undetermined initial bytes
 # Handle indefinite-length list
 # Handle indefinite-length map
@@ -86,8 +85,8 @@ class CBORDecoder:
     def _byte_string_parts(self):
         while True:
             first_byte = ord(self._read_safe(1))
-            if 0x40 <= first_byte < 0x5f:
-                yield self.decode_byte_string(first_byte)
+            if 0x40 <= first_byte < 0x5c:
+                yield self.decode_byte_string(first_byte, 0)
             elif first_byte == 0xff:
                 break
             else:
