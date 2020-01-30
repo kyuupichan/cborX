@@ -27,6 +27,7 @@
 
 import re
 from datetime import datetime, date, timezone, time, timedelta
+from decimal import Decimal
 from enum import IntEnum
 from io import BytesIO
 
@@ -55,7 +56,7 @@ tag_decoders = {
     1: 'decode_timestamp',
     2: 'decode_uint_bignum',
     3: 'decode_negative_bignum',
-    # 4:
+    4: 'decode_decimal',
     # 28:
     # 29:
     # 30:
@@ -226,6 +227,14 @@ class CBORDecoder:
 
     def decode_negative_bignum(self, flags):
         return -1 - self.decode_uint_bignum(flags)
+
+    def decode_decimal(self, flags):
+        parts = self.decode_item(flags)
+        if (not isinstance(parts, (list, tuple)) or
+               len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
+            raise CBORDecodingError('a decimal must be encoded as a 2-integer list')
+        exponent, mantissa = parts
+        return Decimal(mantissa).scaleb(exponent)
 
     def _read_safe(self, n):
         result = self._read(n)

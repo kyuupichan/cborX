@@ -1,5 +1,6 @@
 import math
 from datetime import date, datetime, timezone, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -55,6 +56,8 @@ from cborx import *
     CBORTag(100, 'foo'),
     1_000_000_000_000_000_000_000_000_000,
     -1_000_000_000_000_000_000_000_000_000,
+    Decimal('123.456'),
+    Decimal('-67239582.9826398'),
 ))
 def test_round_trip(value):
     encoding = dumps(value)
