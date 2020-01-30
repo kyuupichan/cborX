@@ -35,10 +35,7 @@ from cborx.types import CBOREOFError, CBORDecodingError
 
 # TODO:
 # Test: nested indefinite-length byte string and other crud
-# Test: nested indefinite-length text string and other crud
 # Test: undetermined initial bytes
-# Test: misplaced break
-# Test: ill-formed indefinite-length text string composed of two incomplete UTF-8 pieces
 # Handle indefinite-length list
 # Handle indefinite-length map
 # Handle / test misplaced break
@@ -106,8 +103,8 @@ class CBORDecoder:
     def _text_string_parts(self):
         while True:
             first_byte = ord(self._read_safe(1))
-            if 0x60 <= first_byte < 0x6f:
-                yield self.decode_text_string(first_byte)
+            if 0x60 <= first_byte < 0x7c:
+                yield self.decode_text_string(first_byte, 0)
             elif first_byte == 0xff:
                 break
             else:

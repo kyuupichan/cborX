@@ -44,11 +44,24 @@ def test_decode_indefinite_length_byte_string():
     assert result == b''.join(parts)
 
 
-def test_decode_indefinite_length_text_string():
-    parts = ['the ', 'quick ', 'brown ', '', 'fox jumped']
-    encoding = CBOREncoder().encode(CBORILTextString(iter(parts)))
-    result = loads(encoding)
-    assert result == ''.join(parts)
+@pytest.mark.parametrize("encoding, expected", (
+    # ['the ', 'quick ', 'brown ', '', 'fox jumped']
+    ('7f647468652066717569636b206662726f776e20606a666f78206a756d706564ff',
+     'the quick brown fox jumped'),
+    # ['the'] encoded non-minimally
+    ('7f 7803 746865ff', 'the'),
+    ('7f 790003 746865ff', 'the'),
+    ('7f 7a00000003 746865ff', 'the'),
+    ('7f 7b0000000000000003 746865ff', 'the'),
+))
+def test_decode_indefinite_length_text_string(encoding, expected):
+    result = loads(bytes.fromhex(encoding))
+    assert result == expected
+
+
+def test_decode_indefinite_length_text_string_split_utf8():
+    with pytest.raises(UnicodeDecodeError):
+        loads(bytes.fromhex('7f 61e3 628182 ff'))
 
 
 @pytest.mark.parametrize("value, encoding", (
@@ -80,6 +93,38 @@ def test_loads_memoryview():
     'lone break',
     'definite length list',
 ])
-def test_decode_bad_break(encoding):
+def test_misplaced_break(encoding):
     with pytest.raises(CBORDecodingError, match='0xff'):
+        loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding", [
+    '7f01ff',      # _ 1
+    '7f616101ff',  # _ 'a' 1
+    '7f20ff',      # _ -1
+    '7f40ff',      # _ b''
+    '7f7cff',      # _ reserved
+    '7f7dff',      # _ reserved
+    '7f7eff',      # _ reserved
+    '7f7fff',      # _ IL string
+    '7f80ff',      # _ []
+    '7fa0ff',      # _ []
+    '7fc0ff',      # _ Tag0
+    '7fe0ff',      # _ Simple(0)
+], ids = [
+    '1',
+    'a 1',
+    '-1',
+    "b''",
+    'reserved 1',
+    'reserved 2',
+    'reserved 3',
+    'IL string',
+    '[]',
+    '{}',
+    'tag-0',
+    'simple-0',
+])
+def test_bad_il_teststring(encoding):
+    with pytest.raises(CBORDecodingError, match='invalid in indefinite-length'):
         loads(bytes.fromhex(encoding))
