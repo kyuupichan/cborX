@@ -25,6 +25,7 @@
 
 '''CBOR decoding.'''
 
+from enum import IntEnum
 from io import BytesIO
 
 
@@ -45,6 +46,10 @@ from cborx.types import CBOREOFError
 # Handle decoding value-shared encodings
 
 
+class CBORFlags(IntEnum):
+    IMMUTABLE = 1
+
+
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
 
 
@@ -53,7 +58,7 @@ class CBORDecoder:
     def __init__(self, read):
         self._read = read
         self._major_decoders = (
-            self.decode_length,
+            self.decode_uint,
             self.decode_negative_int,
             self.decode_byte_string,
             self.decode_text_string,
@@ -75,7 +80,10 @@ class CBORDecoder:
             return None
         raise CBORDecodingError(f'ill-formed CBOR object with initial byte {first_byte}')
 
-    def decode_negative_int(self, first_byte):
+    def decode_uint(self, first_byte, _flags):
+        return self.decode_length(first_byte)
+
+    def decode_negative_int(self, first_byte, _flags):
         return -1 - self.decode_length(first_byte)
 
     def _byte_string_parts(self):
@@ -89,7 +97,7 @@ class CBORDecoder:
                 raise CBORDecodingError(f'CBOR object with initial byte {first_byte} '
                                         f'invalid in indefinite-length byte string')
 
-    def decode_byte_string(self, first_byte):
+    def decode_byte_string(self, first_byte, _flags):
         length = self.decode_length(first_byte)
         if length is None:
             return b''.join(self._byte_string_parts())
@@ -106,33 +114,37 @@ class CBORDecoder:
                 raise CBORDecodingError(f'CBOR object with initial byte {first_byte} '
                                         f'invalid in indefinite-length text string')
 
-    def decode_text_string(self, first_byte):
+    def decode_text_string(self, first_byte, _flags):
         length = self.decode_length(first_byte)
         if length is None:
             return ''.join(self._text_string_parts())
         utf8_bytes = self._read_safe(length)
         return utf8_bytes.decode()
 
-    def _list_parts(self):
-        self._il_nesting += 1
-        decode_item = self.decode_item
+    def _list_parts(self, flags):
+        read_safe = self._read_safe
+        major_decoders = self._major_decoders
         while True:
-            yield decode_item()
+            first_byte = ord(read_safe(1))
+            if first_byte == 0xff:
+                break
+            yield major_decoders[first_byte >> 5](first_byte, flags)
 
-    def decode_list(self, first_byte):
+    def decode_list(self, first_byte, flags):
         length = self.decode_length(first_byte)
+        cls = tuple if flags & CBORFlags.IMMUTABLE else list
         if length is None:
-            return list(self._list_parts())
+            return cls(self._list_parts(flags))
         decode_item = self.decode_item
-        return [decode_item() for _ in range(length)]
+        return cls(decode_item(flags) for _ in range(length))
 
-    def decode_dict(self, first_byte):
+    def decode_dict(self, first_byte, flags):
         raise NotImplementedError
 
-    def decode_tag(self, first_byte):
+    def decode_tag(self, first_byte, flags):
         raise NotImplementedError
 
-    def decode_simple(self, first_byte):
+    def decode_simple(self, first_byte, flags):
         raise NotImplementedError
 
     def _read_safe(self, n):
@@ -141,9 +153,9 @@ class CBORDecoder:
             return result
         raise CBOREOFError(f'need {n:,d} bytes but only {len(result):,d} available')
 
-    def decode_item(self):
+    def decode_item(self, flags):
         first_byte = ord(self._read_safe(1))
-        return self._major_decoders[first_byte >> 5](first_byte)
+        return self._major_decoders[first_byte >> 5](first_byte, flags)
 
 
 def loads(binary, **kwargs):
@@ -153,7 +165,7 @@ def loads(binary, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     decoder = CBORDecoder(BytesIO(binary).read, **kwargs)
-    return decoder.decode_item()
+    return decoder.decode_item(0)
 
 
 def load(fp, **kwargs):
@@ -163,7 +175,7 @@ def load(fp, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     decoder = CBORDecoder(fp.read, **kwargs)
-    return decoder.decode_item()
+    return decoder.decode_item(0)
 
 
 # def load_stream(bytes_gen, **kwargs):
