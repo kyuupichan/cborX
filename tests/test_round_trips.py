@@ -53,6 +53,8 @@ from cborx import *
     datetime(1904, 1, 29, 1, 2, 3, 46, timezone(timedelta(seconds=60))),
     datetime(2004, 1, 29, 1, 2, 3, 46, timezone(timedelta(seconds=-60))),
     CBORTag(100, 'foo'),
+    1_000_000_000_000_000_000_000_000_000,
+    -1_000_000_000_000_000_000_000_000_000,
 ))
 def test_round_trip(value):
     encoding = dumps(value)

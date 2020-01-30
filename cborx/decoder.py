@@ -53,6 +53,8 @@ be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
 tag_decoders = {
     0: 'decode_datetime_text',
     1: 'decode_timestamp',
+    2: 'decode_uint_bignum',
+    3: 'decode_negative_bignum',
     # 4:
     # 28:
     # 29:
@@ -215,6 +217,15 @@ class CBORDecoder:
         if not isinstance(timestamp, (int, float)):
             raise CBORDecodingError('tagged timestamp is not an integer or float')
         return datetime.fromtimestamp(timestamp, timezone.utc)
+
+    def decode_uint_bignum(self, flags):
+        bignum_encoding = self.decode_item(flags)
+        if not isinstance(bignum_encoding, bytes):
+            raise CBORDecodingError('bignum payload must be a byte string')
+        return int.from_bytes(bignum_encoding, byteorder='big')
+
+    def decode_negative_bignum(self, flags):
+        return -1 - self.decode_uint_bignum(flags)
 
     def _read_safe(self, n):
         result = self._read(n)
