@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from cborx import *
@@ -116,6 +118,36 @@ def test_decode_indefinite_length_dict(value, expected):
     encoding = dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False)
     result = loads(encoding)
     assert result == expected
+
+
+@pytest.mark.parametrize("encoding, expected", [
+    ('e0', CBORSimple(0)),
+    ('f3', CBORSimple(19)),
+    ('f4', False),
+    ('f5', True),
+    ('f6', None),
+    ('f7', Undefined),
+    ('f820', CBORSimple(32)),
+    ('f8ff', CBORSimple(255)),
+    ('fb4021cccccccccccd', 8.9),
+    ('f93e00', 1.5),
+    ('f97c00', math.inf),
+    ('f9fc00', -math.inf),
+    ('fa3fc00000', 1.5),
+    ('fa7f800000', math.inf),
+    ('faff800000', -math.inf),
+    ('fb3ff8000000000000', 1.5),
+    ('fb7ff0000000000000', math.inf),
+    ('fbfff0000000000000', -math.inf),
+])
+def test_decode_simple(encoding, expected):
+    result = loads(bytes.fromhex(encoding))
+    assert result == expected
+
+
+@pytest.mark.parametrize("encoding", ['f97e00', 'fa7fc00000', 'fb7ff8000000000000'])
+def test_decode_nan(encoding):
+    assert math.isnan(loads(bytes.fromhex(encoding)))
 
 
 @pytest.mark.parametrize("encoding", [

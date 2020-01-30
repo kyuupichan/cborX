@@ -29,13 +29,16 @@ from enum import IntEnum
 from io import BytesIO
 
 
-from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64
+from cborx.packing import (
+    unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64,
+    unpack_be_float2, unpack_be_float4, unpack_be_float8,
+)
 from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict, CBORSimple
 
 
 # TODO:
-# Decoding of floats
-# Handle non-minimal integer / length decodings
+# Handle tags
+# Handle non-minimal integer / length / float decodings
 # Handle decoding value-shared encodings
 
 
@@ -44,6 +47,7 @@ class CBORFlags(IntEnum):
 
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
+be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
 
 
 class CBORDecoder:
@@ -167,7 +171,8 @@ class CBORDecoder:
                 raise CBORDecodingError(f'simple value {value} ecnoded with extension byte')
             return CBORSimple(value)
         if value < 28:
-            return self.decode_float(1 << (value - 24))
+            value, = be_float_unpackers[value - 25](self._read_safe(1 << (value - 24)))
+            return value
         if value == 31:
             raise CBORDecodingError('CBOR break outside indefinite-length object')
         self.decode_length(first_byte)  # Raises as unassigned

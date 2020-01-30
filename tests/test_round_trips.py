@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from cborx import *
@@ -41,8 +43,16 @@ from cborx import *
     None,
     Undefined,
     [True, False, None, Undefined],
+    1.0,
+    1.1,
+    math.inf,
+    -math.inf,
 ))
-def test_encode_int(value):
-    encoding = CBOREncoder().encode(value)
+def test_round_trip(value):
+    encoding = dumps(value)
     result = loads(encoding)
     assert result == value
+
+
+def test_nan():
+    assert math.isnan(loads(dumps(math.nan)))
