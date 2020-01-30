@@ -40,7 +40,9 @@ from uuid import UUID
 from cborx.packing import (
     pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
-from cborx.types import CBORTag, CBOREncodingError, CBORSimple, encode_length, bjoin, sjoin
+from cborx.types import (
+    FrozenDict, CBORTag, CBOREncodingError, CBORSimple, encode_length, bjoin, sjoin
+)
 
 # TODO:
 #
@@ -342,6 +344,7 @@ default_encode_funcs = {
     float: 'encode_float',
     set: 'encode_set',
     frozenset: 'encode_set',
+    FrozenDict: 'encode_dict',
     OrderedDict: 'encode_ordered_dict',
     array: 'encode_array',
     datetime: 'encode_datetime',

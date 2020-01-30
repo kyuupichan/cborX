@@ -81,17 +81,19 @@ def test_decode_indefinite_length_text_string_split_utf8():
     ('\u6c34', '63e6b0b4'),
     ('\ud800\udd51'.encode('utf-16', 'surrogatepass').decode('utf-16'), '64f0908591'),
 ))
-def test_decode_string(value, encoding):
+def test_decode_text_string(value, encoding):
     result = loads(bytes.fromhex(encoding))
     assert result == value
 
 
-def test_loads_bytearray():
-    assert loads(bytearray(bytes.fromhex('6449455446'))) == 'IETF'
-
-
-def test_loads_memoryview():
-    assert loads(memoryview(bytes.fromhex('6449455446'))) == 'IETF'
+@pytest.mark.parametrize("value, encoding", (
+    ([], '80'),
+    ([1, 2, 33], '8301021821'),
+    ([[[1], 2, 3], 4, 5], '8383810102030405'),
+))
+def test_decode_list(value, encoding):
+    result = loads(bytes.fromhex(encoding))
+    assert result == value
 
 
 @pytest.mark.parametrize("encoding", [
@@ -168,3 +170,9 @@ def test_bad_il_text_string(encoding):
 def test_bad_il_byte_string(encoding):
     with pytest.raises(CBORDecodingError, match='invalid in indefinite-length'):
         loads(bytes.fromhex(encoding))
+
+
+
+@pytest.mark.parametrize("cls", [bytearray, memoryview])
+def test_loads_special(cls):
+    assert loads(cls(bytes.fromhex('6449455446'))) == 'IETF'

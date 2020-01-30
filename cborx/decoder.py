@@ -30,7 +30,7 @@ from io import BytesIO
 
 
 from cborx.packing import unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64
-from cborx.types import CBOREOFError, CBORDecodingError
+from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict
 
 
 # TODO:
@@ -129,13 +129,33 @@ class CBORDecoder:
     def decode_list(self, first_byte, flags):
         length = self.decode_length(first_byte)
         cls = tuple if flags & CBORFlags.IMMUTABLE else list
+        flags &=  ~CBORFlags.IMMUTABLE
         if length is None:
             return cls(self._list_parts(flags))
         decode_item = self.decode_item
         return cls(decode_item(flags) for _ in range(length))
 
+    def _dict_parts(self, flags):
+        read_safe = self._read_safe
+        major_decoders = self._major_decoders
+        while True:
+            first_byte = ord(read_safe(1))
+            if first_byte == 0xff:
+                break
+            key = major_decoders[first_byte >> 5](first_byte, flags | CBORFlags.IMMUTABLE)
+            first_byte = ord(read_safe(1))
+            value = major_decoders[first_byte >> 5](first_byte, flags)
+            yield (key, value)
+
     def decode_dict(self, first_byte, flags):
-        raise NotImplementedError
+        length = self.decode_length(first_byte)
+        cls = FrozenDict if flags & CBORFlags.IMMUTABLE else dict
+        flags &=  ~CBORFlags.IMMUTABLE
+        if length is None:
+            return cls(self._dict_parts(flags))
+        decode_item = self.decode_item
+        return cls((decode_item(flags | CBORFlags.IMMUTABLE), decode_item(flags))
+                   for _ in range(length))
 
     def decode_tag(self, first_byte, flags):
         raise NotImplementedError

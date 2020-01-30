@@ -25,6 +25,7 @@
 
 '''CBOR classes.'''
 
+from collections.abc import Mapping
 
 from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
 
@@ -144,6 +145,36 @@ class CBORILDict(CBORILObject):
             encode_item = encoder.encode_item
             parts = (encode_item(key) + encode_item(kvalue) for key, kvalue in self.generator)
             return b'\xbf' + bjoin(parts) + b'\xff'
+
+
+class FrozenDict(Mapping):
+
+    def __init__(self, *args, **kwargs):
+        print(args)
+        d = dict(*args, **kwargs)
+        self._dict = d
+        self.__contains__ == d.__contains__
+        self.keys = d.keys
+        self.values__ = d.values
+        self.items = d.items
+        self._hash = None
+
+    def __getitem__(self, key):
+        return self._dict.__getitem__(key)
+
+    def __iter__(self):
+        return iter(self._dict)
+
+    def __len__(self):
+        return len(self._dict)
+
+    def __hash__(self):
+        if self._hash is None:
+            self._hash = hash((tuple(self), tuple(self.values())))
+        return self._hash
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__}, {self._dict!r}>'
 
 
 def encode_length(length, major):
