@@ -109,6 +109,7 @@ def test_decode_indefinite_length_list(value, expected):
 
 @pytest.mark.parametrize("value, expected", (
     (CBORILDict(iter(())), {}),
+    (CBORILDict(iter( [(1, 2)] )), {1 : 2}),
     (CBORILDict(iter( [((1, 2), (3, 4))])), {(1, 2): [3, 4]}),
 ))
 def test_decode_indefinite_length_dict(value, expected):
@@ -120,9 +121,15 @@ def test_decode_indefinite_length_dict(value, expected):
 @pytest.mark.parametrize("encoding", [
     'ff',
     '8301ff03',
+    'a1ff',
+    'a100ff',
+    'bf00ff',
 ], ids = [
     'lone break',
     'definite length list',
+    'definite map key',
+    'definite map value',
+    'indefinite map value',
 ])
 def test_misplaced_break(encoding):
     with pytest.raises(CBORDecodingError, match='0xff'):
@@ -192,6 +199,42 @@ def test_bad_il_byte_string(encoding):
     with pytest.raises(CBORDecodingError, match='invalid in indefinite-length'):
         loads(bytes.fromhex(encoding))
 
+
+@pytest.mark.parametrize("encoding", [
+    '1c', '1d', '1e', '1f',
+    '3c', '3d', '3e', '3f',
+    '5c', '5d', '5e',
+    '7c', '7d', '7e',
+    '9c', '9d', '9e',
+    'bc', 'bd', 'be',
+    # 'dc', 'dd', 'de', 'df',
+    # 'fc', 'fd', 'fe', 'ff',
+])
+def test_unassigned(encoding):
+    with pytest.raises(CBORDecodingError, match='ill-formed CBOR object with initial byte '):
+        loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding", [
+    '18', '1900', '1a000000', '1b00000000000000',  # length truncated
+    '38', '3900', '3a000000', '3b00000000000000',  # length truncated
+    '58', '5900', '5a000000', '5b00000000000000',  # length truncated
+    '5801', '590001', '5a00000001', '5b0000000000000001',  # payload truncated
+    '5f',   # missing byte string
+    '78', '7900', '7a000000', '7b00000000000000',  # length truncated
+    '7801', '790001', '7a00000001', '7b0000000000000001',  # payload truncated
+    '7f',   # missing tex string
+    '98', '9900', '9a000000', '9b00000000000000',
+    '9801', '990001', '9a00000001', '9b0000000000000001',  # missing item
+    '9f',   # missing item
+    'b8', 'b900', 'ba000000', 'bb00000000000000',
+    'b801', 'b90001', 'ba00000001', 'bb0000000000000001',  # missing key-value pair
+    'b80100', 'b9000100', 'ba0000000100', 'bb000000000000000100',  # missing value
+    'bf',   'bf00',
+])
+def test_truncated(encoding):
+    with pytest.raises(CBORDecodingError, match='need '):
+        loads(bytes.fromhex(encoding))
 
 
 @pytest.mark.parametrize("cls", [bytearray, memoryview])

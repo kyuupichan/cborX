@@ -34,10 +34,6 @@ from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict
 
 
 # TODO:
-# Test: undetermined initial bytes
-# Handle indefinite-length list
-# Handle indefinite-length map
-# Handle / test misplaced break
 # Handle non-minimal integer / length decodings
 # Handle decoding value-shared encodings
 
