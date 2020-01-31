@@ -355,6 +355,14 @@ def test_shared_lists():
     assert result[0] is result[1] and result[1] is result[2]
 
 
+def test_shared_ints():
+    # Tests the clearing of _pending_id in decode_shared
+    a = [1, [1, 2], 1]
+    encoding = dumps(a, shared_types={int})
+    result = loads(encoding)
+    assert result == a
+
+
 def test_cyclic_list():
     a = [1, 2]
     a.append(a)
