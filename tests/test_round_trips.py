@@ -3,6 +3,7 @@ import re
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from fractions import Fraction
+from uuid import UUID
 
 import pytest
 
@@ -70,6 +71,7 @@ from cborx import *
     Fraction(1, 12345678901234567890123456789012345678901234567890123456789012345678901234567890),
     re.compile('.[0-9]+'),
     re.compile('.\\.\\\'\"'),
+    UUID(hex='5eaffac8b51e480581277fdcc7842faf'),
 ))
 def test_round_trip(value):
     encoding = dumps(value)

@@ -31,6 +31,7 @@ from decimal import Decimal
 from fractions import Fraction
 from enum import IntEnum
 from io import BytesIO
+from uuid import UUID
 
 
 from cborx.packing import (
@@ -62,7 +63,7 @@ tag_decoders = {
     # 29: tagged shared
     30: 'decode_rational',
     35: 'decode_regexp',
-    # 37: UUID
+    37: 'decode_uuid',
     # 258: set
     # 260: ip_address
     # 261: ip_network
@@ -249,11 +250,14 @@ class CBORDecoder:
     def decode_regexp(self, flags):
         pattern = self.decode_item(flags)
         if not isinstance(pattern, str):
-            raise CBORDecodingError('a regexp must be encoded as a string')
-        try:
-            return re.compile(pattern)
-        except re.error as e:
-            raise CBORDecodingError(f'invalid regexp pattern "{pattern}": {e}') from None
+            raise CBORDecodingError('a regexp must be encoded as a text string')
+        return re.compile(pattern)
+
+    def decode_uuid(self, flags):
+        uuid = self.decode_item(flags)
+        if not isinstance(uuid, bytes):
+            raise CBORDecodingError('a UUID must be encoded as a byte string')
+        return UUID(bytes=uuid)
 
     def read(self, n):
         result = self._read(n)
