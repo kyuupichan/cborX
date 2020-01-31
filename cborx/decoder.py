@@ -57,15 +57,15 @@ tag_decoders = {
     2: 'decode_uint_bignum',
     3: 'decode_negative_bignum',
     4: 'decode_decimal',
-    # 28:
-    # 29:
-    # 30:
-    # 35:
-    # 37:
-    # 258:
-    # 260:
-    # 261:
-    # 272:
+    # 28: tagged shareable
+    # 29: tagged shared
+    # 30: fraction
+    # 35: regexp
+    # 37: UUID
+    # 258: set
+    # 260: ip_address
+    # 261: ip_network
+    # 272: OrderedDict
 }
 
 
@@ -90,7 +90,7 @@ class CBORDecoder:
             return minor
         if minor < 28:
             kind = minor - 24
-            length, = uint_unpackers[kind](self._read_safe(1 << kind))
+            length, = uint_unpackers[kind](self.read(1 << kind))
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
             return None
@@ -104,7 +104,7 @@ class CBORDecoder:
 
     def _byte_string_parts(self):
         while True:
-            first_byte = ord(self._read_safe(1))
+            first_byte = ord(self.read(1))
             if 0x40 <= first_byte < 0x5c:
                 yield self.decode_byte_string(first_byte, 0)
             elif first_byte == 0xff:
@@ -117,11 +117,11 @@ class CBORDecoder:
         length = self.decode_length(first_byte)
         if length is None:
             return b''.join(self._byte_string_parts())
-        return self._read_safe(length)
+        return self.read(length)
 
     def _text_string_parts(self):
         while True:
-            first_byte = ord(self._read_safe(1))
+            first_byte = ord(self.read(1))
             if 0x60 <= first_byte < 0x7c:
                 yield self.decode_text_string(first_byte, 0)
             elif first_byte == 0xff:
@@ -134,14 +134,14 @@ class CBORDecoder:
         length = self.decode_length(first_byte)
         if length is None:
             return ''.join(self._text_string_parts())
-        utf8_bytes = self._read_safe(length)
+        utf8_bytes = self.read(length)
         return utf8_bytes.decode()
 
     def _list_parts(self, flags):
-        read_safe = self._read_safe
+        read = self.read
         major_decoders = self._major_decoders
         while True:
-            first_byte = ord(read_safe(1))
+            first_byte = ord(read(1))
             if first_byte == 0xff:
                 break
             yield major_decoders[first_byte >> 5](first_byte, flags)
@@ -155,14 +155,14 @@ class CBORDecoder:
         return cls(decode_item(flags) for _ in range(length))
 
     def _dict_parts(self, flags):
-        read_safe = self._read_safe
+        read = self.read
         major_decoders = self._major_decoders
         while True:
-            first_byte = ord(read_safe(1))
+            first_byte = ord(read(1))
             if first_byte == 0xff:
                 break
             key = major_decoders[first_byte >> 5](first_byte, flags | CBORFlags.IMMUTABLE)
-            first_byte = ord(read_safe(1))
+            first_byte = ord(read(1))
             value = major_decoders[first_byte >> 5](first_byte, flags)
             yield (key, value)
 
@@ -192,12 +192,12 @@ class CBORDecoder:
         if value < 24:
             return CBORSimple.assigned_values[value]
         if value == 24:
-            value = ord(self._read_safe(1))
+            value = ord(self.read(1))
             if value < 32:
                 raise CBORDecodingError(f'simple value {value} ecnoded with extension byte')
             return CBORSimple(value)
         if value < 28:
-            value, = be_float_unpackers[value - 25](self._read_safe(1 << (value - 24)))
+            value, = be_float_unpackers[value - 25](self.read(1 << (value - 24)))
             return value
         if value == 31:
             raise CBORDecodingError('CBOR break outside indefinite-length object')
@@ -236,14 +236,14 @@ class CBORDecoder:
         exponent, mantissa = parts
         return Decimal(mantissa).scaleb(exponent)
 
-    def _read_safe(self, n):
+    def read(self, n):
         result = self._read(n)
         if len(result) == n:
             return result
         raise CBOREOFError(f'need {n:,d} bytes but only {len(result):,d} available')
 
     def decode_item(self, flags):
-        first_byte = ord(self._read_safe(1))
+        first_byte = ord(self.read(1))
         return self._major_decoders[first_byte >> 5](first_byte, flags)
 
 
