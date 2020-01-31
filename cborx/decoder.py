@@ -25,6 +25,7 @@
 
 '''CBOR decoding.'''
 
+import itertools
 import re
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
@@ -49,7 +50,6 @@ from cborx.util import datetime_from_enhanced_RFC3339_text
 
 # TODO:
 # Handle non-minimal integer / length / float decodings
-# Handle decoding value-shared encodings
 
 
 class CBORFlags(IntEnum):
@@ -65,8 +65,8 @@ tag_decoders = {
     2: 'decode_uint_bignum',
     3: 'decode_negative_bignum',
     4: 'decode_decimal',
-    # 28: tagged shareable
-    # 29: tagged shared
+    28: 'decode_shared',
+    29: 'decode_shared_ref',
     30: 'decode_rational',
     35: 'decode_regexp',
     37: 'decode_uuid',
@@ -91,6 +91,8 @@ class CBORDecoder:
             self.decode_tag,
             self.decode_simple
         )
+        self._shared_id = itertools.count()
+        self._shared_ids = {}
 
     def decode_length(self, first_byte):
         minor = first_byte & 0x1f
@@ -296,6 +298,19 @@ class CBORDecoder:
         if not isinstance(result, Mapping):
             raise CBORDecodingError('ordered map tag did not contain a map')
         return result
+
+    def decode_shared(self, flags):
+        shared_id = next(self._shared_id)
+        value = self.decode_item(flags)
+        self._shared_ids[shared_id] = value
+        return value
+
+    def decode_shared_ref(self, flags):
+        shared_id = self.decode_item(flags)
+        try:
+            return self._shared_ids[shared_id]
+        except (TypeError, KeyError):
+            raise CBORDecodingError(f'invalid shared reference {shared_id}')
 
     def read(self, n):
         result = self._read(n)

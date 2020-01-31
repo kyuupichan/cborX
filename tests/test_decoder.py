@@ -292,6 +292,8 @@ def test_truncated(encoding):
     ('d9010200', 'set must be encoded as a list'),
     ('d9010400', 'IP address must be encoded as a byte string'),
     ('d9010500',' IP network must be encoded as a single-entry map'),
+    ('d81d60', 'invalid shared reference'),
+    ('d81d80', 'invalid shared reference'),
 ])
 def test_invalid_tagged(encoding, match):
     with pytest.raises(CBORDecodingError, match=match):
@@ -322,6 +324,36 @@ def test_ordered_flag():
     result = loads(encoding)
     for item in result.values():
         assert not isinstance(item, OrderedDict)
+
+
+def test_non_shared_strings():
+    a = 'bar'
+    pair = [a, a]
+    encoding = dumps(pair)
+    assert encoding.hex() == '826362617263626172'
+    result = loads(encoding)
+    assert result == pair
+    assert result[0] is not result[1]
+
+
+def test_shared_strings():
+    a = 'bar'
+    pair = [a, a]
+    encoding = dumps(pair, shared_types={str})
+    assert encoding.hex() == '82d81c63626172d81d00'
+    result = loads(encoding)
+    assert result == pair
+    assert result[0] is result[1]
+
+
+def test_shared_lists():
+    a = [1, 2, "bar"]
+    pair = [a, a, a]
+    encoding = dumps(pair, shared_types={list})
+    result = loads(encoding)
+    assert result == pair
+    assert result[0] is result[1] and result[1] is result[2]
+
 
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])
 def test_invalid_simple(encoding):
