@@ -291,9 +291,13 @@ def test_truncated(encoding):
     ('d82500', 'UUID must be encoded as a byte string'),
     ('d9010200', 'set must be encoded as a list'),
     ('d9010400', 'IP address must be encoded as a byte string'),
+    ('d9010443c00a0a', 'invalid IP address'),
     ('d9010500',' IP network must be encoded as a single-entry map'),
+    ('d90105a144c0a80064420102', 'invalid IP network'),
     ('d81d60', 'invalid shared reference'),
     ('d81d80', 'invalid shared reference'),
+    ('d81d05', 'invalid shared reference'),
+    ('d90102d81c81d81d00', 'invalid shared reference'),
 ])
 def test_invalid_tagged(encoding, match):
     with pytest.raises(CBORDecodingError, match=match):
@@ -310,12 +314,6 @@ def test_decode_set():
     encoding = 'd90102 80'
     # assert it's a set not a frozenset
     assert isinstance(loads(bytes.fromhex(encoding)), set)
-
-
-def test_invalid_ip_address():
-    encoding = 'd9010443080808'
-    with pytest.raises(ValueError, match='does not appear'):
-        loads(bytes.fromhex(encoding))
 
 
 def test_ordered_flag():

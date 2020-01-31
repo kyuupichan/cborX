@@ -50,6 +50,7 @@ from cborx.util import datetime_from_enhanced_RFC3339_text
 
 # TODO:
 # Handle non-minimal integer / length / float decodings
+# Create some kind of incremental decoder
 
 
 class CBORFlags(IntEnum):
@@ -298,7 +299,10 @@ class CBORDecoder:
         addr_bytes = self.decode_item(flags)
         if not isinstance(addr_bytes, bytes):
             raise CBORDecodingError('an IP address must be encoded as a byte string')
-        return ip_address(addr_bytes)
+        try:
+            return ip_address(addr_bytes)
+        except ValueError:
+            raise CBORDecodingError(f'invalid IP address: {addr_bytes}') from None
 
     def decode_ip_network(self, flags):
         # For some daft reason a one-element dictionary was chosen over a pair
@@ -306,7 +310,10 @@ class CBORDecoder:
         if not isinstance(value, Mapping) or len(value) != 1:
             raise CBORDecodingError('an IP network must be encoded as a single-entry map')
         for pair in value.items():
-            return ip_network(pair, strict=False)
+            try:
+                return ip_network(pair, strict=False)
+            except (ValueError, TypeError):
+                raise CBORDecodingError(f'invalid IP network: {pair}') from None
 
     def decode_ordered_dict(self, flags):
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
