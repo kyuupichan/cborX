@@ -25,6 +25,7 @@
 
 '''CBOR classes.'''
 
+from collections import OrderedDict
 from collections.abc import Mapping
 
 from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
@@ -156,8 +157,10 @@ class CBORILDict(CBORILObject):
 
 class FrozenDict(Mapping):
 
+    dict_class = dict
+
     def __init__(self, *args, **kwargs):
-        d = dict(*args, **kwargs)
+        d = self.dict_class(*args, **kwargs)
         self._dict = d
         self.__contains__ == d.__contains__
         self.keys = d.keys
@@ -181,6 +184,11 @@ class FrozenDict(Mapping):
 
     def __repr__(self):
         return f'<{self.__class__.__name__}, {self._dict!r}>'
+
+
+class FrozenOrderedDict(FrozenDict):
+
+    dict_class = OrderedDict
 
 
 def encode_length(length, major):

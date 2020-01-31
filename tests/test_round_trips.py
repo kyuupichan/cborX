@@ -1,5 +1,6 @@
 import math
 import re
+from collections import OrderedDict
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
@@ -80,6 +81,8 @@ from cborx import *
     IPv4Network('0.0.0.0/0'),
     IPv4Network('192.168.0.100/24', strict=False),
     IPv6Network('2001:db8:85a3:0:0:8a2e::/96', strict=False),
+    OrderedDict([('b', 1), ('a', 3)]),
+    {FrozenOrderedDict([('b', 1), ('c', 2), ('a', 5)]): None},
 ))
 def test_round_trip(value):
     encoding = dumps(value)

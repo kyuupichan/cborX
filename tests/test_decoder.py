@@ -1,3 +1,4 @@
+from collections import OrderedDict
 import math
 import re
 
@@ -314,6 +315,13 @@ def test_invalid_ip_address():
     with pytest.raises(ValueError, match='does not appear'):
         loads(bytes.fromhex(encoding))
 
+
+def test_ordered_flag():
+    od = OrderedDict(a={1: 2})
+    encoding = dumps(od)
+    result = loads(encoding)
+    for item in result.values():
+        assert not isinstance(item, OrderedDict)
 
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])
 def test_invalid_simple(encoding):

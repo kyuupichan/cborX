@@ -23,6 +23,31 @@ def test_FrozenDict():
     assert a == b
 
 
+def test_FrozenOrderedDict():
+    a = FrozenOrderedDict(([1, 2], [3, 4]))
+    assert a[1] == 2
+    assert a[3] == 4
+    assert len(a) == 2
+    assert 1 in a
+    assert not 2 in a
+    assert 3 in a
+    assert list(a) == [1, 3]
+    assert list(a.keys()) == [1, 3]
+    assert list(a.values()) == [2, 4]
+    assert list(a.items()) == [(1, 2), (3, 4)]
+
+    b = FrozenOrderedDict(([1, 2], [3, 4]))
+    assert a == b
+    b = FrozenDict(([1, 2], [3, 4]))
+    assert a == b
+
+    b = dict(([1, 2], [3, 4]))
+    assert a == b
+
+    a = FrozenOrderedDict([('b', 1), ('a', 2)])
+    assert list(a.keys()) == ['b', 'a']
+
+
 @pytest.mark.parametrize("value", [0, 1, 15, 19, 32, 128, 255])
 def test_simple(value):
     assert CBORSimple(value) == CBORSimple(value)

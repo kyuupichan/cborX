@@ -26,6 +26,7 @@
 '''CBOR decoding.'''
 
 import re
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from datetime import datetime, date, timezone, time, timedelta
 from decimal import Decimal
@@ -40,7 +41,9 @@ from cborx.packing import (
     unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64,
     unpack_be_float2, unpack_be_float4, unpack_be_float8,
 )
-from cborx.types import CBOREOFError, CBORDecodingError, FrozenDict, CBORSimple, CBORTag
+from cborx.types import (
+    CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag
+)
 from cborx.util import datetime_from_enhanced_RFC3339_text
 
 
@@ -51,6 +54,7 @@ from cborx.util import datetime_from_enhanced_RFC3339_text
 
 class CBORFlags(IntEnum):
     IMMUTABLE = 1
+    ORDERED = 2
 
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
@@ -69,7 +73,7 @@ tag_decoders = {
     258: 'decode_set',
     260: 'decode_ip_address',
     261: 'decode_ip_network',
-    # 272: OrderedDict
+    272: 'decode_ordered_dict',
 }
 
 
@@ -172,7 +176,11 @@ class CBORDecoder:
 
     def decode_dict(self, first_byte, flags):
         length = self.decode_length(first_byte)
-        cls = FrozenDict if flags & CBORFlags.IMMUTABLE else dict
+        if flags & CBORFlags.ORDERED:
+            cls = FrozenOrderedDict if flags & CBORFlags.IMMUTABLE else OrderedDict
+            flags &= ~CBORFlags.ORDERED
+        else:
+            cls = FrozenDict if flags & CBORFlags.IMMUTABLE else dict
         if length is None:
             return cls(self._dict_parts(flags))
         decode_item = self.decode_item
@@ -281,6 +289,13 @@ class CBORDecoder:
             raise CBORDecodingError('an IP network must be encoded as a single-entry map')
         for pair in value.items():
             return ip_network(pair, strict=False)
+
+    def decode_ordered_dict(self, flags):
+        # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
+        result = self.decode_item(flags | CBORFlags.ORDERED)
+        if not isinstance(result, Mapping):
+            raise CBORDecodingError('ordered map tag did not contain a map')
+        return result
 
     def read(self, n):
         result = self._read(n)

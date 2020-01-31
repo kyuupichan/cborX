@@ -41,7 +41,7 @@ from cborx.packing import (
     pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
 from cborx.types import (
-    FrozenDict, CBORTag, CBOREncodingError, encode_length, bjoin, sjoin
+    FrozenDict, FrozenOrderedDict, CBORTag, CBOREncodingError, encode_length, bjoin, sjoin
 )
 
 # TODO:
@@ -346,6 +346,7 @@ default_encode_funcs = {
     frozenset: 'encode_set',
     FrozenDict: 'encode_dict',
     OrderedDict: 'encode_ordered_dict',
+    FrozenOrderedDict: 'encode_ordered_dict',
     array: 'encode_array',
     datetime: 'encode_datetime',
     date: 'encode_date',
