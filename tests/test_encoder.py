@@ -301,7 +301,7 @@ def test_date(value, expected):
     'rational 1', 'rational 2', 'rational 3',
     'IPv4 1', 'IPv4 2', 'IPv6 1', 'IPv6 2', 'IPv4 Network 1', 'IPv4 Network 2', 'IPv6 Network',
 ])
-def test_encodings(value, expected):
+def test_tagged_encodings(value, expected):
     result = dumps(value).hex()
     assert result == expected
 
@@ -344,7 +344,7 @@ def test_default_encoder_options():
     'q array', 'Q array',
     'f array', 'd array',
 ])
-def test_encodings(value, expected):
+def test_array_encodings(value, expected):
     result = dumps(value).hex()
     assert result == expected
 

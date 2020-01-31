@@ -2,6 +2,7 @@ import math
 import re
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
+from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from fractions import Fraction
 from uuid import UUID
 
@@ -74,6 +75,11 @@ from cborx import *
     UUID(hex='5eaffac8b51e480581277fdcc7842faf'),
     set([ 1, 2, "3", b'4', (5, 6), False, None, Undefined, True]),
     {frozenset([ 1, 2 ]): set([ 3, 4])},
+    IPv4Address('192.10.10.1'),
+    IPv6Address('32:193:56:77::2'),
+    IPv4Network('0.0.0.0/0'),
+    IPv4Network('192.168.0.100/24', strict=False),
+    IPv6Network('2001:db8:85a3:0:0:8a2e::/96', strict=False),
 ))
 def test_round_trip(value):
     encoding = dumps(value)

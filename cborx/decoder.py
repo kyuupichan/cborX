@@ -26,11 +26,13 @@
 '''CBOR decoding.'''
 
 import re
+from collections.abc import Mapping, Sequence
 from datetime import datetime, date, timezone, time, timedelta
 from decimal import Decimal
 from fractions import Fraction
 from enum import IntEnum
 from io import BytesIO
+from ipaddress import ip_address, ip_network
 from uuid import UUID
 
 
@@ -65,8 +67,8 @@ tag_decoders = {
     35: 'decode_regexp',
     37: 'decode_uuid',
     258: 'decode_set',
-    # 260: ip_address
-    # 261: ip_network
+    260: 'decode_ip_address',
+    261: 'decode_ip_network',
     # 272: OrderedDict
 }
 
@@ -233,7 +235,7 @@ class CBORDecoder:
     def decode_decimal(self, flags):
         parts = self.decode_item(flags)
         # NOTE: should require the exponent cannot be a bignum
-        if (not isinstance(parts, (list, tuple)) or
+        if (not isinstance(parts, Sequence) or
                len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
             raise CBORDecodingError('a decimal must be encoded as a 2-integer list')
         exponent, mantissa = parts
@@ -241,8 +243,8 @@ class CBORDecoder:
 
     def decode_rational(self, flags):
         parts = self.decode_item(flags)
-        if (not isinstance(parts, (list, tuple)) or
-               len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
+        if (not isinstance(parts, Sequence) or
+                len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
             raise CBORDecodingError('a rational must be encoded as a 2-integer list')
         numerator, denominator = parts
         return Fraction(numerator, denominator)
@@ -261,10 +263,24 @@ class CBORDecoder:
 
     def decode_set(self, flags):
         members = self.decode_item(flags | CBORFlags.IMMUTABLE)
-        if not isinstance(members, tuple):
+        if not isinstance(members, Sequence):
             raise CBORDecodingError('a set must be encoded as a list')
         cls = frozenset if flags & CBORFlags.IMMUTABLE else set
         return cls(members)
+
+    def decode_ip_address(self, flags):
+        addr_bytes = self.decode_item(flags)
+        if not isinstance(addr_bytes, bytes):
+            raise CBORDecodingError('an IP address must be encoded as a byte string')
+        return ip_address(addr_bytes)
+
+    def decode_ip_network(self, flags):
+        # For some daft reason a one-element dictionary was chosen over a pair
+        value = self.decode_item(flags)
+        if not isinstance(value, Mapping) or len(value) != 1:
+            raise CBORDecodingError('an IP network must be encoded as a single-entry map')
+        for pair in value.items():
+            return ip_network(pair, strict=False)
 
     def read(self, n):
         result = self._read(n)

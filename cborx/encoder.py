@@ -292,7 +292,7 @@ class CBOREncoder:
         assert isinstance(value, (IPv4Network, IPv6Network))
         # For some daft reason a one-element dictionary was chosen over a pair
         pairs = [(value.network_address.packed, value.prefixlen)]
-        return self.encode_tag(261) + self.encode_sorted_dict(pairs)
+        return self.encode_tag(261) + self.encode_sorted_dict(pairs, CBORSortMethod.UNSORTED)
 
     def encode_array(self, value):
         assert isinstance(value, array)
