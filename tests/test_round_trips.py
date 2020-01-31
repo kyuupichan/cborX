@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 from fractions import Fraction
@@ -65,6 +66,10 @@ from cborx import *
     Fraction(-1, 5),
     Fraction(61, -3),
     Fraction(-16, -9),
+    # Frations explicitly admit bignums
+    Fraction(1, 12345678901234567890123456789012345678901234567890123456789012345678901234567890),
+    re.compile('.[0-9]+'),
+    re.compile('.\\.\\\'\"'),
 ))
 def test_round_trip(value):
     encoding = dumps(value)

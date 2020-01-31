@@ -285,6 +285,8 @@ def test_truncated(encoding):
     ('d81e83020202', 'rational must be encoded as'),
     ('d81e0000', 'rational must be encoded as'),
     ('d81e824040', 'rational must be encoded as'),
+    ('d8234102', 'regexp must be encoded as a string'),
+    ('d823625b5d', 'invalid regexp pattern "\\[\\]": '),
 ])
 def test_invalid_tagged(encoding, match):
     with pytest.raises(CBORDecodingError, match=match):

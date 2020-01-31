@@ -61,7 +61,7 @@ tag_decoders = {
     # 28: tagged shareable
     # 29: tagged shared
     30: 'decode_rational',
-    # 35: regexp
+    35: 'decode_regexp',
     # 37: UUID
     # 258: set
     # 260: ip_address
@@ -231,6 +231,7 @@ class CBORDecoder:
 
     def decode_decimal(self, flags):
         parts = self.decode_item(flags)
+        # NOTE: should require the exponent cannot be a bignum
         if (not isinstance(parts, (list, tuple)) or
                len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
             raise CBORDecodingError('a decimal must be encoded as a 2-integer list')
@@ -244,6 +245,15 @@ class CBORDecoder:
             raise CBORDecodingError('a rational must be encoded as a 2-integer list')
         numerator, denominator = parts
         return Fraction(numerator, denominator)
+
+    def decode_regexp(self, flags):
+        pattern = self.decode_item(flags)
+        if not isinstance(pattern, str):
+            raise CBORDecodingError('a regexp must be encoded as a string')
+        try:
+            return re.compile(pattern)
+        except re.error as e:
+            raise CBORDecodingError(f'invalid regexp pattern "{pattern}": {e}') from None
 
     def read(self, n):
         result = self._read(n)
