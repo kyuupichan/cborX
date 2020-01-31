@@ -288,6 +288,7 @@ def test_truncated(encoding):
     ('d81e824040', 'rational must be encoded as'),
     ('d8234102', 'regexp must be encoded as a text string'),
     ('d82500', 'UUID must be encoded as a byte string'),
+    ('d9010200', 'set must be encoded as a list'),
 ])
 def test_invalid_tagged(encoding, match):
     with pytest.raises(CBORDecodingError, match=match):
@@ -298,6 +299,12 @@ def test_invalid_regexp():
     encoding = 'd823625b5d'
     with pytest.raises(re.error):
         loads(bytes.fromhex(encoding))
+
+
+def test_decode_set():
+    encoding = 'd90102 80'
+    # assert it's a set not a frozenset
+    assert isinstance(loads(bytes.fromhex(encoding)), set)
 
 
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])

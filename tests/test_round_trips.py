@@ -72,6 +72,8 @@ from cborx import *
     re.compile('.[0-9]+'),
     re.compile('.\\.\\\'\"'),
     UUID(hex='5eaffac8b51e480581277fdcc7842faf'),
+    set([ 1, 2, "3", b'4', (5, 6), False, None, Undefined, True]),
+    {frozenset([ 1, 2 ]): set([ 3, 4])},
 ))
 def test_round_trip(value):
     encoding = dumps(value)

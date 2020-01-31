@@ -64,7 +64,7 @@ tag_decoders = {
     30: 'decode_rational',
     35: 'decode_regexp',
     37: 'decode_uuid',
-    # 258: set
+    258: 'decode_set',
     # 260: ip_address
     # 261: ip_network
     # 272: OrderedDict
@@ -258,6 +258,13 @@ class CBORDecoder:
         if not isinstance(uuid, bytes):
             raise CBORDecodingError('a UUID must be encoded as a byte string')
         return UUID(bytes=uuid)
+
+    def decode_set(self, flags):
+        members = self.decode_item(flags | CBORFlags.IMMUTABLE)
+        if not isinstance(members, tuple):
+            raise CBORDecodingError('a set must be encoded as a list')
+        cls = frozenset if flags & CBORFlags.IMMUTABLE else set
+        return cls(members)
 
     def read(self, n):
         result = self._read(n)
