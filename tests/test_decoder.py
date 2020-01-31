@@ -361,6 +361,20 @@ def test_shared_ints():
     assert result == a
 
 
+def test_shared_immutable():
+    # Another testcase from cbor2
+    # a = (1, 2, 3)
+    # b = ((a, a), a)
+    # A non-canonical encoding for set(b)
+    encoding = bytes.fromhex('d90102d81c82d81c82d81c83010203d81d02d81d02')
+    result = loads(encoding)
+    assert isinstance(result, set)
+    assert len(result) == 2
+    a = [item for item in result if len(item) == 3][0]
+    b = [item for item in result if len(item) == 2][0]
+    assert a is b[0] and a is b[1]
+
+
 def test_cyclic_list():
     a = [1, 2]
     a.append(a)
