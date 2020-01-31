@@ -355,6 +355,57 @@ def test_shared_lists():
     assert result[0] is result[1] and result[1] is result[2]
 
 
+def test_cyclic_list():
+    a = [1, 2]
+    a.append(a)
+    encoding = dumps(a, shared_types={list})
+    result = loads(encoding)
+    assert len(result) == 3
+    assert result[2] == result
+
+
+def test_cyclic_il_list():
+    # Tests encoding and decoding of a self-referencing indefinite-length list
+    a = [1, 2]
+    il_list = CBORILList(a)
+    a.append(il_list)
+    encoding = dumps(il_list, shared_types={CBORILList}, realize_il=False)
+    result = loads(encoding)
+    assert isinstance(result, list)
+    assert len(result) == 3
+    assert result[0] == 1
+    assert result[1] == 2
+    assert result[2] is result
+
+
+def test_cyclic_dict():
+    a = {1: 2}
+    a[3] = a
+    encoding = dumps(a, shared_types={dict})
+    result = loads(encoding)
+    assert len(result) == 2
+    assert result[3] is result
+
+
+def test_cyclic_ordered_dict():
+    a = OrderedDict([(1,2)])
+    a[3] = a
+    encoding = dumps(a, shared_types={OrderedDict})
+    result = loads(encoding)
+    assert len(result) == 2
+    assert result[3] is result
+
+
+def test_cyclic_complex():
+    a = [1, 2]
+    b = {'a': [a]}
+    a.append(b)
+    encoding = dumps(a, shared_types={list})
+    result = loads(encoding)
+    assert len(result) == 3
+    assert result[2]['a'][0] is result
+
+
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])
 def test_invalid_simple(encoding):
     with pytest.raises(CBORDecodingError, match='simple value '):

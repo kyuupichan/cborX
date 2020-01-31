@@ -91,8 +91,23 @@ class CBORDecoder:
             self.decode_tag,
             self.decode_simple
         )
+        self._pending_id = None
         self._shared_id = itertools.count()
         self._shared_ids = {}
+
+    def _build_mutable(self, cls):
+        if self._pending_id is None:
+            return cls
+        obj = cls()
+        self._shared_ids[self._pending_id] = obj
+        self._pending_id = None
+        def build(*args):
+            if isinstance(obj, dict):
+                obj.update(*args)
+            else:
+                obj.extend(*args)
+            return obj
+        return build
 
     def decode_length(self, first_byte):
         minor = first_byte & 0x1f
@@ -158,7 +173,7 @@ class CBORDecoder:
 
     def decode_list(self, first_byte, flags):
         length = self.decode_length(first_byte)
-        cls = tuple if flags & CBORFlags.IMMUTABLE else list
+        cls = tuple if flags & CBORFlags.IMMUTABLE else self._build_mutable(list)
         if length is None:
             return cls(self._list_parts(flags))
         decode_item = self.decode_item
@@ -179,10 +194,11 @@ class CBORDecoder:
     def decode_dict(self, first_byte, flags):
         length = self.decode_length(first_byte)
         if flags & CBORFlags.ORDERED:
-            cls = FrozenOrderedDict if flags & CBORFlags.IMMUTABLE else OrderedDict
+            cls = (FrozenOrderedDict if flags & CBORFlags.IMMUTABLE
+                   else self._build_mutable(OrderedDict))
             flags &= ~CBORFlags.ORDERED
         else:
-            cls = FrozenDict if flags & CBORFlags.IMMUTABLE else dict
+            cls = FrozenDict if flags & CBORFlags.IMMUTABLE else self._build_mutable(dict)
         if length is None:
             return cls(self._dict_parts(flags))
         decode_item = self.decode_item
@@ -301,7 +317,9 @@ class CBORDecoder:
 
     def decode_shared(self, flags):
         shared_id = next(self._shared_id)
+        self._pending_id = shared_id
         value = self.decode_item(flags)
+        self._pending_id = None
         self._shared_ids[shared_id] = value
         return value
 
