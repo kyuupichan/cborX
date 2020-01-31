@@ -281,6 +281,10 @@ def test_truncated(encoding):
     ('c483020202', 'decimal must be encoded as'),
     ('c40000', 'decimal must be encoded as'),
     ('c4824040', 'decimal must be encoded as'),
+    ('d81e8102', 'rational must be encoded'),
+    ('d81e83020202', 'rational must be encoded as'),
+    ('d81e0000', 'rational must be encoded as'),
+    ('d81e824040', 'rational must be encoded as'),
 ])
 def test_invalid_tagged(encoding, match):
     with pytest.raises(CBORDecodingError, match=match):

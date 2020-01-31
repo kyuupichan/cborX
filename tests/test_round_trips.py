@@ -1,6 +1,7 @@
 import math
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 
@@ -60,6 +61,10 @@ from cborx import *
     Decimal('-67239582.9826398'),
     Decimal(math.inf),
     Decimal(-math.inf),
+    Fraction(3, 8),
+    Fraction(-1, 5),
+    Fraction(61, -3),
+    Fraction(-16, -9),
 ))
 def test_round_trip(value):
     encoding = dumps(value)

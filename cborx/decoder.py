@@ -28,6 +28,7 @@
 import re
 from datetime import datetime, date, timezone, time, timedelta
 from decimal import Decimal
+from fractions import Fraction
 from enum import IntEnum
 from io import BytesIO
 
@@ -59,7 +60,7 @@ tag_decoders = {
     4: 'decode_decimal',
     # 28: tagged shareable
     # 29: tagged shared
-    # 30: fraction
+    30: 'decode_rational',
     # 35: regexp
     # 37: UUID
     # 258: set
@@ -236,6 +237,14 @@ class CBORDecoder:
         exponent, mantissa = parts
         return Decimal(mantissa).scaleb(exponent)
 
+    def decode_rational(self, flags):
+        parts = self.decode_item(flags)
+        if (not isinstance(parts, (list, tuple)) or
+               len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
+            raise CBORDecodingError('a rational must be encoded as a 2-integer list')
+        numerator, denominator = parts
+        return Fraction(numerator, denominator)
+
     def read(self, n):
         result = self._read(n)
         if len(result) == n:
@@ -265,30 +274,3 @@ def load(fp, **kwargs):
     '''
     decoder = CBORDecoder(fp.read, **kwargs)
     return decoder.decode_item(0)
-
-
-# def load_stream(bytes_gen, **kwargs):
-#     '''A generator of top-level decoded CBOR objects reading from a byte stream.
-
-#     The byte stream yields byte strings of arbitrary size.'''
-#     decoder = CBORDecoder(bytes_gen, **kwargs)
-#     try:
-#         decode_item = decoder.decode_item
-#         while True:
-#             yield decode_item()
-#     except CBOREOFError:
-#         pass
-
-
-# async def aload_stream(bytes_async_gen, **kwargs):
-#     '''An asynchronous generator of top-level decoded CBOR objects reading from a byte stream.
-
-#     The byte stream asynchronously yields byte strings of arbitrary size.
-#     '''
-#     decoder = CBORDecoder(bytes_async_gen, **kwargs)
-#     try:
-#         async_decode_item = decoder.async_decode_item
-#         while True:
-#             yield await async_decode_item()
-#     except CBOREOFError:
-#         pass

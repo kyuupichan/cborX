@@ -298,7 +298,7 @@ def test_date(value, expected):
 ], ids = [
     'regex 1', 'regex 2',
     'UUID',
-    'Fraction 1', 'Fraction 2', 'Fraction 3',
+    'rational 1', 'rational 2', 'rational 3',
     'IPv4 1', 'IPv4 2', 'IPv6 1', 'IPv6 2', 'IPv4 Network 1', 'IPv4 Network 2', 'IPv6 Network',
 ])
 def test_encodings(value, expected):

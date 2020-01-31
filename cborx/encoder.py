@@ -272,7 +272,7 @@ class CBOREncoder:
         else:
             return self.encode_float(float(value))
 
-    def encode_fraction(self, value):
+    def encode_rational(self, value):
         assert isinstance(value, Fraction)
         return self.encode_tag(30) + self.encode_ordered_list((value.numerator, value.denominator))
 
@@ -352,7 +352,7 @@ default_encode_funcs = {
     Decimal: 'encode_decimal',
     regexp_type: 'encode_regexp',
     UUID: 'encode_uuid',
-    Fraction: 'encode_fraction',
+    Fraction: 'encode_rational',
     IPv4Address: 'encode_ip_address',
     IPv6Address: 'encode_ip_address',
     IPv4Network: 'encode_ip_network',
