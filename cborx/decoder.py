@@ -63,7 +63,7 @@ be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
 tag_decoders = {
     0: 'decode_datetime_text',
     1: 'decode_timestamp',
-    2: 'decode_uint_bignum',
+    2: 'decode_unsigned_bignum',
     3: 'decode_negative_bignum',
     4: 'decode_decimal',
     5: 'decode_bigfloat',
@@ -84,7 +84,7 @@ class CBORDecoder:
     def __init__(self, read):
         self._read = read
         self._major_decoders = (
-            self.decode_uint,
+            self.decode_unsigned_int,
             self.decode_negative_int,
             self.decode_byte_string,
             self.decode_text_string,
@@ -123,7 +123,7 @@ class CBORDecoder:
             return None
         raise CBORDecodingError(f'ill-formed CBOR object with initial byte 0x{first_byte:x}')
 
-    def decode_uint(self, first_byte, _flags):
+    def decode_unsigned_int(self, first_byte, _flags):
         return self.decode_length(first_byte)
 
     def decode_negative_int(self, first_byte, _flags):
@@ -251,14 +251,14 @@ class CBORDecoder:
             raise CBORDecodingError('tagged timestamp is not an integer or float')
         return datetime.fromtimestamp(timestamp, timezone.utc)
 
-    def decode_uint_bignum(self, flags):
+    def decode_unsigned_bignum(self, flags):
         bignum_encoding = self.decode_item(flags)
         if not isinstance(bignum_encoding, bytes):
             raise CBORDecodingError('bignum payload must be a byte string')
         return int.from_bytes(bignum_encoding, byteorder='big')
 
     def decode_negative_bignum(self, flags):
-        return -1 - self.decode_uint_bignum(flags)
+        return -1 - self.decode_unsigned_bignum(flags)
 
     def _decode_exponent_mantissa(self, type_str):
         parts = self.decode_item(0)
