@@ -43,6 +43,7 @@ from cborx.packing import (
 from cborx.types import (
     FrozenDict, FrozenOrderedDict, CBORTag, CBOREncodingError, encode_length, bjoin, sjoin
 )
+from cborx.util import uint_to_be_bytes
 
 # TODO:
 #
@@ -143,19 +144,27 @@ class CBOREncoder:
         self._encode_funcs[vtype] = encode_func
         return encode_func
 
-    def encode_int(self, value):
-        assert isinstance(value, int)
+    def encode_int(self, value, permit_bignum=True):
+        '''Encode an integer as major value 0 or 1 if possible, otherwise as a tagged bignum if
+        permit_bignum is True.
+        '''
         try:
-            if value < 0:
-                prefix = b'\xc3'
-                value = -1 - value
-                return encode_length(value, 0x20)
-            else:
-                prefix = b'\xc2'
+            if value >= 0:
                 return encode_length(value, 0x00)
+            else:
+                return encode_length(-1 - value, 0x20)
         except OverflowError:
-            bignum_encoding = value.to_bytes((value.bit_length() + 7) // 8, 'big')
-            return prefix + self.encode_byte_string(bignum_encoding)
+            pass
+        if permit_bignum:
+            return self.encode_bignum(value)
+        raise CBOREncodingError(f'overflow encoding {value:,d} as a standard integer')
+
+    def encode_bignum(self, value):
+        '''Encode an integer as a tagged bignum.'''
+        if value >= 0:
+            return b'\xc2' + self.encode_byte_string(uint_to_be_bytes(value))
+        else:
+            return b'\xc3' + self.encode_byte_string(uint_to_be_bytes(-1 - value))
 
     def encode_byte_string(self, value):
         return encode_length(len(value), 0x40) + value
@@ -164,9 +173,12 @@ class CBOREncoder:
         value_utf8 = value.encode()
         return encode_length(len(value_utf8), 0x60) + value_utf8
 
+    def _make_list(self, length, encoded_items_gen):
+        return encode_length(length, 0x80) + bjoin(encoded_items_gen)
+
     def encode_ordered_list(self, value):
         encode_item = self.encode_item
-        return encode_length(len(value), 0x80) + bjoin(encode_item(item) for item in value)
+        return self._make_list(len(value), (encode_item(item) for item in value))
 
     def encode_sorted_list(self, value):
         length = encode_length(len(value), 0x80)
@@ -260,6 +272,10 @@ class CBOREncoder:
         assert isinstance(value, date)
         return self.encode_tag(0) + self.encode_text_string(value.isoformat())
 
+    def _encode_exponent_mantissa(self, tag, exponent, mantissa):
+        parts = (self.encode_int(exponent, permit_bignum=False), self.encode_int(mantissa))
+        return self.encode_tag(tag) + self._make_list(2, parts)
+
     def encode_decimal(self, value):
         assert isinstance(value, Decimal)
         dt = value.as_tuple()
@@ -268,7 +284,7 @@ class CBOREncoder:
             mantissa = int(sjoin(str(digit) for digit in dt.digits))
             if dt.sign:
                 mantissa = -mantissa
-            return self.encode_tag(4) + self.encode_ordered_list((dt.exponent, mantissa))
+            return self._encode_exponent_mantissa(4, dt.exponent, mantissa)
         else:
             return self.encode_float(float(value))
 

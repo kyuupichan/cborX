@@ -25,8 +25,11 @@
 
 '''CBOR classes.'''
 
+import attr
+
 from collections import OrderedDict
 from collections.abc import Mapping
+from decimal import Decimal
 
 from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
 
@@ -153,6 +156,20 @@ class CBORILDict(CBORILObject):
             encode_item = encoder.encode_item
             parts = (encode_item(key) + encode_item(kvalue) for key, kvalue in self.generator)
             return b'\xbf' + bjoin(parts) + b'\xff'
+
+
+@attr.s(slots=True, frozen=True)
+class BigFloat:
+    '''Represents a BigFloat.  Value is mantissa * pow(2, exponent).  There is
+    no representation of infinities or NaNs, use float or Decimal for those.'''
+    mantissa = attr.ib()
+    exponent = attr.ib()
+
+    def __encode_cbor__(self, encoder):
+        return encoder._encode_exponent_mantissa(5, self.exponent, self.mantissa)
+
+    def to_decimal(self):
+        return Decimal(self.mantissa) * (Decimal(2) ** self.exponent)
 
 
 class FrozenDict(Mapping):

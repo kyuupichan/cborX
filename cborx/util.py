@@ -53,3 +53,8 @@ def datetime_from_enhanced_RFC3339_text(text):
 
     time_part = time(*time_parts)
     return datetime.combine(date_part, time_part)
+
+
+def uint_to_be_bytes(value):
+    '''Converts an unsigned integer to a big-endian sequence of bytes'''
+    return value.to_bytes((value.bit_length() + 7) // 8, 'big')

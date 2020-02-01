@@ -66,6 +66,7 @@ tag_decoders = {
     2: 'decode_uint_bignum',
     3: 'decode_negative_bignum',
     4: 'decode_decimal',
+    5: 'decode_bigfloat',
     28: 'decode_shared',
     29: 'decode_shared_ref',
     30: 'decode_rational',
@@ -259,14 +260,21 @@ class CBORDecoder:
     def decode_negative_bignum(self, flags):
         return -1 - self.decode_uint_bignum(flags)
 
-    def decode_decimal(self, flags):
-        parts = self.decode_item(flags)
-        # NOTE: should require the exponent cannot be a bignum
+    def _decode_exponent_mantissa(self, type_str):
+        parts = self.decode_item(0)
+        # FIXME: should require the exponent cannot be a bignum
         if (not isinstance(parts, Sequence) or
                len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
-            raise CBORDecodingError('a decimal must be encoded as a 2-integer list')
-        exponent, mantissa = parts
+            raise CBORDecodingError(f'a {type_str} must be encoded as a 2-integer list')
+        return parts
+
+    def decode_decimal(self, flags):
+        exponent, mantissa = self._decode_exponent_mantissa('decimal')
         return Decimal(mantissa).scaleb(exponent)
+
+    def decode_bigfloat(self, flags):
+        exponent, mantissa = self._decode_exponent_mantissa('bigfloat')
+        return Decimal(mantissa) * (2 ** exponent)
 
     def decode_rational(self, flags):
         parts = self.decode_item(flags)
