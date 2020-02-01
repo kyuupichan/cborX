@@ -45,7 +45,7 @@ from cborx.packing import (
 from cborx.types import (
     CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag
 )
-from cborx.util import datetime_from_enhanced_RFC3339_text
+from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin
 
 
 # TODO:
@@ -103,6 +103,7 @@ class CBORDecoder:
         obj = cls()
         self._shared_ids[self._pending_id] = obj
         self._pending_id = None
+
         def build(*args):
             if isinstance(obj, dict):
                 obj.update(*args)
@@ -143,7 +144,7 @@ class CBORDecoder:
     def decode_byte_string(self, first_byte, _flags):
         length = self.decode_length(first_byte)
         if length is None:
-            return b''.join(self._byte_string_parts())
+            return bjoin(self._byte_string_parts())
         return self.read(length)
 
     def _text_string_parts(self):
@@ -160,7 +161,7 @@ class CBORDecoder:
     def decode_text_string(self, first_byte, _flags):
         length = self.decode_length(first_byte)
         if length is None:
-            return ''.join(self._text_string_parts())
+            return sjoin(self._text_string_parts())
         utf8_bytes = self.read(length)
         return utf8_bytes.decode()
 
@@ -264,7 +265,7 @@ class CBORDecoder:
         parts = self.decode_item(0)
         # FIXME: should require the exponent cannot be a bignum
         if (not isinstance(parts, Sequence) or
-               len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
+                len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
             raise CBORDecodingError(f'a {type_str} must be encoded as a 2-integer list')
         return parts
 

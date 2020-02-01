@@ -41,9 +41,9 @@ from cborx.packing import (
     pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
 from cborx.types import (
-    FrozenDict, FrozenOrderedDict, CBORTag, CBOREncodingError, encode_length, bjoin, sjoin
+    FrozenDict, FrozenOrderedDict, CBORTag, CBOREncodingError, encode_length
 )
-from cborx.util import uint_to_be_bytes
+from cborx.util import uint_to_be_bytes, bjoin, sjoin
 
 # TODO:
 #
@@ -94,7 +94,7 @@ class CBOREncoder:
     SHARED_TYPES = {tuple, list, dict, OrderedDict}
 
     def __init__(self, *, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
-                 float_style = CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
+                 float_style=CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
                  realize_il=True, shared_types=(), deterministic=False):
         if deterministic:
             if sort_method == CBORSortMethod.UNSORTED:
@@ -342,10 +342,9 @@ def _typecode_tag(typecode):
         (8 if typecode.lower() == typecode else 0)
     )
 
+
 regexp_type = type(re.compile(''))
-
 array_typecode_tags = {typecode: _typecode_tag(typecode) for typecode in 'bBhHiIlLqQfd'}
-
 default_encode_funcs = {
     int: 'encode_int',
     bytes: 'encode_byte_string',
@@ -376,6 +375,10 @@ default_encode_funcs = {
     IPv6Network: 'encode_ip_network',
 }
 
+
+#
+# External interface
+#
 
 def dumps(obj, **kwargs):
     '''Serialize obj to a CBOR-formatted bytes object.

@@ -114,10 +114,6 @@ def test_encode_simple(value, encoding):
     assert dumps(value) == encoding
 
 
-def _indefinite_empty():
-    yield from ()
-
-
 def _indefinite_bytes():
     yield bytes(range(1, 3))
     yield bytearray(range(3, 6))
@@ -275,7 +271,7 @@ def test_date(value, expected):
     (Decimal('nan'), 'f97e00'),
     (Decimal('-inf'),'f9fc00'),
 ])
-def test_date(value, expected):
+def test_decimal(value, expected):
     result = dumps(value)
     assert result == bytes.fromhex(expected)
 

@@ -32,9 +32,7 @@ from collections.abc import Mapping
 from decimal import Decimal
 
 from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
-
-bjoin = b''.join
-sjoin = ''.join
+from cborx.util import bjoin, sjoin
 
 
 class CBORError(Exception):

@@ -26,7 +26,10 @@
 import re
 from datetime import datetime, date, timezone, time, timedelta
 
+bjoin = b''.join
+sjoin = ''.join
 time_regex = re.compile(r'T(\d\d):(\d\d):(\d\d)(.\d+)?(Z|([+-])(\d\d):(\d\d))$')
+
 
 def datetime_from_enhanced_RFC3339_text(text):
     '''Enchanced because it requires an upper case Z and T.'''
