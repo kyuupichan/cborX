@@ -25,54 +25,67 @@
 
 '''CBOR classes.'''
 
-import attr
-
 from collections import OrderedDict
 from collections.abc import Mapping
 from decimal import Decimal
+
+import attr
 
 from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
 from cborx.util import bjoin, sjoin
 
 
 class CBORError(Exception):
-    pass
+    '''Base exception of cborX library errors'''
 
 
 class CBORDecodingError(CBORError):
-    pass
-
-
-class CBOREOFError(CBORDecodingError):
-    pass
+    '''Base exception of cborX decoding errors'''
 
 
 class CBOREncodingError(CBORError):
-    pass
+    '''Base exception of cborX encoding errors'''
+
+
+class CBOREOFError(CBORDecodingError):
+    '''Exception raised on premature end-of-data'''
 
 
 class CBORTag:
+    '''Represents a value wrapped by a CBOR tag'''
 
     def __init__(self, tag, value):
         if not isinstance(tag, int):
             raise TypeError(f'tag {tag} must be an integer')
         if not 0 <= tag < 65536:
             raise ValueError(f'tag value {tag} out of range')
-        self._tag = tag
-        self._value = value
+        self.tag = tag
+        self.value = value
 
     def __eq__(self, other):
         return (isinstance(other, CBORTag)
-                and self._tag == other._tag and self._value == other._value)
+                and self.tag == other.tag and self.value == other.value)
+
+    def __le__(self, other):
+        if not isinstance(other, CBORTag):
+            raise TypeError('a CBORTag cannot be compared with a different type')
+        return self.tag < other.tag
 
     def __encode_cbor__(self, encoder):
-        return encode_length(self._tag, 0xc0) + encoder.encode_item(self._value)
+        return encode_length(self.tag, 0xc0) + encoder.encode_item(self.value)
+
+    def __repr__(self):
+        return f'<CBORTag {self.tag} {self.value!r}>'
 
 
 class CBORUndefined:
+    '''The class of the CBOR Undefined singleton'''
 
     def __encode_cbor__(self, encoder):
         return b'\xf7'
+
+    def __repr__(self):
+        return '<Undefined>'
 
 
 # A singleton
@@ -80,6 +93,7 @@ Undefined = CBORUndefined()
 
 
 class CBORSimple:
+    '''Represents a CBOR Simple object'''
 
     assigned_values = {
         20: False,
@@ -93,67 +107,71 @@ class CBORSimple:
             raise TypeError(f'simple value {value} must be an integer')
         if not ((0 <= value <= 19) or (32 <= value <= 255)):
             raise ValueError(f'simple value {value} out of range')
-        self._value = value
+        self.value = value
 
     def __eq__(self, other):
-        return isinstance(other, CBORSimple) and self._value == other._value
+        return isinstance(other, CBORSimple) and self.value == other.value
 
     def __encode_cbor__(self, encoder):
-        if self._value <= 31:
-            return pack_byte(0xe0 + self._value)
-        else:
-            return b'\xf8' + pack_byte(self._value)
+        if self.value <= 31:
+            return pack_byte(0xe0 + self.value)
+
+        return b'\xf8' + pack_byte(self.value)
 
 
 class CBORILObject:
-    '''Base class of indefinite-length objects.'''
+    '''Base class of indefinite-length objects'''
 
     def __init__(self, generator):
         self.generator = generator
 
 
 class CBORILByteString(CBORILObject):
+    '''A CBOR indefinite-length byte string'''
 
     def __encode_cbor__(self, encoder):
         encode_byte_string = encoder.encode_byte_string
         if encoder.realize_il:
             return encode_byte_string(bjoin(self.generator))
-        else:
-            parts = (encode_byte_string(byte_string) for byte_string in self.generator)
-            return b'\x5f' + bjoin(parts) + b'\xff'
+
+        parts = (encode_byte_string(byte_string) for byte_string in self.generator)
+        return b'\x5f' + bjoin(parts) + b'\xff'
 
 
 class CBORILTextString(CBORILObject):
+    '''A CBOR indefinite-length text string'''
 
     def __encode_cbor__(self, encoder):
         encode_text_string = encoder.encode_text_string
         if encoder.realize_il:
             return encode_text_string(sjoin(self.generator))
-        else:
-            parts = (encode_text_string(text_string) for text_string in self.generator)
-            return b'\x7f' + bjoin(parts) + b'\xff'
+
+        parts = (encode_text_string(text_string) for text_string in self.generator)
+        return b'\x7f' + bjoin(parts) + b'\xff'
 
 
 class CBORILList(CBORILObject):
+    '''A CBOR indefinite-length list'''
 
     def __encode_cbor__(self, encoder):
         if encoder.realize_il:
             return encoder.encode_sorted_list(tuple(self.generator))
-        else:
-            encode_item = encoder.encode_item
-            parts = (encode_item(item) for item in self.generator)
-            return b'\x9f' + bjoin(parts) + b'\xff'
+
+        encode_item = encoder.encode_item
+        parts = (encode_item(item) for item in self.generator)
+        return b'\x9f' + bjoin(parts) + b'\xff'
 
 
 class CBORILDict(CBORILObject):
+    '''A CBOR indefinite-length map'''
 
     def __encode_cbor__(self, encoder):
         if encoder.realize_il:
             return encoder.encode_sorted_dict(tuple(self.generator), encoder.sort_method)
-        else:
-            encode_item = encoder.encode_item
-            parts = (encode_item(key) + encode_item(kvalue) for key, kvalue in self.generator)
-            return b'\xbf' + bjoin(parts) + b'\xff'
+
+        encode_item = encoder.encode_item
+        parts = (encode_item(key) + encode_item(kvalue) for key, kvalue in self.generator)
+        return b'\xbf' + bjoin(parts) + b'\xff'
 
 
 @attr.s(slots=True, frozen=True)
@@ -167,20 +185,22 @@ class BigFloat:
         return encoder._encode_exponent_mantissa(5, self.exponent, self.mantissa)
 
     def to_decimal(self):
+        '''Convert to a Decimal object'''
         return Decimal(self.mantissa) * (Decimal(2) ** self.exponent)
 
 
 class FrozenDict(Mapping):
+    '''A frozen (immutable) dictionary'''
 
     dict_class = dict
 
     def __init__(self, *args, **kwargs):
-        d = self.dict_class(*args, **kwargs)
-        self._dict = d
-        self.__contains__ == d.__contains__
-        self.keys = d.keys
-        self.values__ = d.values
-        self.items = d.items
+        dct = self.dict_class(*args, **kwargs)
+        self._dict = dct
+        self.__contains__ = dct.__contains__
+        self.keys = dct.keys
+        self.values__ = dct.values
+        self.items = dct.items
         self._hash = None
 
     def __getitem__(self, key):
@@ -202,20 +222,21 @@ class FrozenDict(Mapping):
 
 
 class FrozenOrderedDict(FrozenDict):
+    '''A frozen (immuatable) ordered dictionary.'''
 
     dict_class = OrderedDict
 
 
 def encode_length(length, major):
+    '''Return the CBOR encoding of a length for the given (shifted) major value.'''
     if length < 24:
         return pack_byte(major + length)
-    elif length < 256:
+    if length < 256:
         return pack_byte(major + 24) + pack_byte(length)
-    elif length < 65536:
+    if length < 65536:
         return pack_byte(major + 25) + pack_be_uint16(length)
-    elif length < 4294967296:
+    if length < 4294967296:
         return pack_byte(major + 26) + pack_be_uint32(length)
-    elif length < 18446744073709551616:
+    if length < 18446744073709551616:
         return pack_byte(major + 27) + pack_be_uint64(length)
-    else:
-        raise OverflowError
+    raise OverflowError
