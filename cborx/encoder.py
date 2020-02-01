@@ -38,10 +38,10 @@ from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 
 from cborx.packing import (
-    pack_byte, pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
+    pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
 from cborx.types import (
-    FrozenDict, FrozenOrderedDict, CBORTag, CBOREncodingError, encode_length
+    FrozenDict, FrozenOrderedDict, CBOREncodingError, encode_length
 )
 from cborx.util import uint_to_be_bytes, bjoin, sjoin
 
@@ -53,17 +53,20 @@ from cborx.util import uint_to_be_bytes, bjoin, sjoin
 
 
 class CBORDateTimeStyle(IntEnum):
+    '''Indicates how to encode a datetime'''
     TIMESTAMP = 0
     ISO_WITH_Z = 1
     ISO_WITHOUT_Z = 2
 
 
 class CBORFloatStyle(IntEnum):
+    '''Indicates how to encode a float'''
     SHORTEST = 0
     DOUBLE = 1
 
 
 class CBORSortMethod(IntEnum):
+    '''Indicates how to sort deterministic output'''
     LEXICOGRAPHIC = 0      # draft-ietf-cbor-7049bis-12
     LENGTH_FIRST = 1       # RFC 7049
     UNSORTED = 2
@@ -207,7 +210,7 @@ class CBOREncoder:
     def encode_bool(self, value):
         return b'\xf5' if value else b'\xf4'
 
-    def encode_None(self, value):
+    def encode_None(self, _value):
         return b'\xf6'
 
     def encode_float(self, value):

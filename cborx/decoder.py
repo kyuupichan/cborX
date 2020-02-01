@@ -29,7 +29,7 @@ import itertools
 import re
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from datetime import datetime, date, timezone, time, timedelta
+from datetime import datetime, timezone
 from decimal import Decimal
 from fractions import Fraction
 from enum import IntEnum
@@ -54,6 +54,7 @@ from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin
 
 
 class CBORFlags(IntEnum):
+    '''Flags affecting CBORDecoder'''
     IMMUTABLE = 1
     ORDERED = 2
 
@@ -80,6 +81,7 @@ tag_decoders = {
 
 
 class CBORDecoder:
+    '''Decodes CBOR-encoded data'''
 
     def __init__(self, read):
         self._read = read
@@ -232,9 +234,9 @@ class CBORDecoder:
         if value < 28:
             value, = be_float_unpackers[value - 25](self.read(1 << (value - 24)))
             return value
-        if value == 31:
-            raise CBORDecodingError('CBOR break outside indefinite-length object')
-        self.decode_length(first_byte)  # Raises as unassigned
+        if value != 31:
+            self.decode_length(first_byte)  # Raises as unassigned
+        raise CBORDecodingError('CBOR break outside indefinite-length object')
 
     def decode_datetime_text(self, flags):
         text = self.decode_item(flags)
@@ -269,11 +271,11 @@ class CBORDecoder:
             raise CBORDecodingError(f'a {type_str} must be encoded as a 2-integer list')
         return parts
 
-    def decode_decimal(self, flags):
+    def decode_decimal(self, _flags):
         exponent, mantissa = self._decode_exponent_mantissa('decimal')
         return Decimal(mantissa).scaleb(exponent)
 
-    def decode_bigfloat(self, flags):
+    def decode_bigfloat(self, _flags):
         exponent, mantissa = self._decode_exponent_mantissa('bigfloat')
         return Decimal(mantissa) * (2 ** exponent)
 

@@ -24,6 +24,8 @@
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 # and warranty status of this software.
 
+'''Encourage efficient bytes manipulation'''
+
 from struct import Struct
 
 
