@@ -29,7 +29,9 @@ import re
 from array import array
 from datetime import datetime, date, timezone, time, timedelta
 
-from cborx.packing import pack_be_float4, pack_be_float8
+from cborx.packing import (
+    pack_byte, pack_be_float4, pack_be_float8, pack_be_uint16, pack_be_uint32, pack_be_uint64,
+)
 
 bjoin = b''.join
 sjoin = ''.join
@@ -66,6 +68,21 @@ def datetime_from_enhanced_RFC3339_text(text):
 def uint_to_be_bytes(value):
     '''Convert an unsigned integer to a big-endian sequence of bytes'''
     return value.to_bytes((value.bit_length() + 7) // 8, 'big')
+
+
+def encode_length(length, major):
+    '''Return the CBOR encoding of a length for the given (shifted) major value.'''
+    if length < 24:
+        return pack_byte(major + length)
+    if length < 256:
+        return pack_byte(major + 24) + pack_byte(length)
+    if length < 65536:
+        return pack_byte(major + 25) + pack_be_uint16(length)
+    if length < 4294967296:
+        return pack_byte(major + 26) + pack_be_uint32(length)
+    if length < 18446744073709551616:
+        return pack_byte(major + 27) + pack_be_uint64(length)
+    raise OverflowError
 
 
 def typecode_tag(typecode):

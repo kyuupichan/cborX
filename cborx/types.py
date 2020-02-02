@@ -32,8 +32,8 @@ from decimal import Decimal
 
 import attr
 
-from cborx.packing import pack_byte, pack_be_uint16, pack_be_uint32, pack_be_uint64
-from cborx.util import bjoin, sjoin
+from cborx.packing import pack_byte
+from cborx.util import bjoin, sjoin, encode_length
 
 
 class CBORError(Exception):
@@ -60,7 +60,7 @@ class CBORTag:
     value = attr.ib()
 
     @tag.validator
-    def _validate_tag(self, attribute, value):
+    def _validate_tag(self, _attribute, value):
         if not isinstance(value, int):
             raise TypeError(f'tag {value} must be an integer')
         if value < 0 or value > 18446744073709551615:
@@ -98,7 +98,7 @@ class CBORSimple:
     value = attr.ib()
 
     @value.validator
-    def _validate_value(self, attribute, value):
+    def _validate_value(self, _attribute, value):
         if not isinstance(value, int):
             raise TypeError(f'simple value {value} must be an integer')
         if not ((0 <= value <= 19) or (32 <= value <= 255)):
@@ -206,7 +206,7 @@ class BigNum:
     value = attr.ib()
 
     @value.validator
-    def _validate_value(self, attribute, value):
+    def _validate_value(self, _attribute, value):
         if not isinstance(value, int):
             raise TypeError(f'bignum value {value} must be an integer')
 
@@ -250,18 +250,3 @@ class FrozenOrderedDict(FrozenDict):
     '''A frozen (immuatable) ordered dictionary.'''
 
     dict_class = OrderedDict
-
-
-def encode_length(length, major):
-    '''Return the CBOR encoding of a length for the given (shifted) major value.'''
-    if length < 24:
-        return pack_byte(major + length)
-    if length < 256:
-        return pack_byte(major + 24) + pack_byte(length)
-    if length < 65536:
-        return pack_byte(major + 25) + pack_be_uint16(length)
-    if length < 4294967296:
-        return pack_byte(major + 26) + pack_be_uint32(length)
-    if length < 18446744073709551616:
-        return pack_byte(major + 27) + pack_be_uint64(length)
-    raise OverflowError

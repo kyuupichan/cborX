@@ -35,7 +35,6 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import IntEnum
 from fractions import Fraction
-from functools import partial
 from io import BytesIO
 from ipaddress import ip_address, ip_network
 from uuid import UUID
@@ -52,7 +51,7 @@ from cborx.types import (
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
 
 
-class DecoderFlags:
+class DecoderFlags(IntEnum):
     '''Flags affecting CBORDecoder'''
     IMMUTABLE = 1
     ORDERED = 2

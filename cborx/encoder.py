@@ -40,10 +40,8 @@ from uuid import UUID
 from cborx.packing import (
     pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
-from cborx.types import (
-    FrozenDict, FrozenOrderedDict, CBOREncodingError, encode_length
-)
-from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map
+from cborx.types import FrozenDict, FrozenOrderedDict, CBOREncodingError
+from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map, encode_length
 
 # TODO:
 #
