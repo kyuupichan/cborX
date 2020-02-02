@@ -232,15 +232,13 @@ class CBORDecoder:
         decoder = self._tag_decoders.get(tag_value)  # Cache
         if not decoder:
             decoder = self._custom_tag_decoders.get(tag_value)
-            if decoder:
-                decoder = partial(decoder, self)
-            else:
+            if not decoder:
                 decoder_name = default_tag_decoders.get(tag_value)
                 if decoder_name is None:
                     return CBORTag(tag_value, self.decode_item())
-                decoder = getattr(self, decoder_name)
+                decoder = getattr(self.__class__, decoder_name)
             self._tag_decoders[tag_value] = decoder
-        return decoder()
+        return decoder(self)
 
     def decode_simple(self, first_byte):
         value = first_byte & 0x1f
