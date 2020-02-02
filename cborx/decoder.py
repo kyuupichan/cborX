@@ -45,8 +45,9 @@ from cborx.packing import (
     unpack_be_float2, unpack_be_float4, unpack_be_float8,
 )
 from cborx.types import (
-    BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError, NotEOFError,
-    TagTypeError, TagValueError, StringEncodingError, DuplicateKeyError, DeterministicError,
+    BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
+    UnconsumedDataError, TagTypeError, TagValueError, StringEncodingError, DuplicateKeyError,
+    DeterministicError,
     FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat
 )
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
@@ -87,7 +88,8 @@ default_tag_decoders.update({tag: 'decode_array' for tag in tag_to_typecode_map}
 class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
-    def __init__(self, read, retain_bignums=False, tag_decoders=None, simple_value=None):
+    def __init__(self, read, retain_bignums=False, tag_decoders=None, simple_value=None,
+                 check_eof=True):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -108,6 +110,7 @@ class CBORDecoder:
         self._custom_tag_decoders = tag_decoders or {}
         self._tag_decoders = {}
         self._simple_value = simple_value or CBORSimple
+        self._check_eof = check_eof
 
     @contextmanager
     def flags_set(self, mask):
@@ -413,6 +416,13 @@ class CBORDecoder:
         first_byte = ord(self.read(1))
         return self._major_decoders[first_byte >> 5](first_byte)
 
+    def decode(self):
+        result = self.decode_item()
+        if self._check_eof and self._read(1):
+            raise UnconsumedDataError('not all input consumed')
+
+        return result
+
 
 def loads(binary, **kwargs):
     '''Deserialize a binary object (e.g. a bytes object, a bytearray object, a memoryview
@@ -421,7 +431,7 @@ def loads(binary, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     decoder = CBORDecoder(BytesIO(binary).read, **kwargs)
-    return decoder.decode_item()
+    return decoder.decode()
 
 
 def load(fp, **kwargs):
@@ -431,4 +441,4 @@ def load(fp, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     decoder = CBORDecoder(fp.read, **kwargs)
-    return decoder.decode_item()
+    return decoder.decode()

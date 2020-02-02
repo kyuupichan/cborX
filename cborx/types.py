@@ -41,8 +41,8 @@ __all__ = (
     'CBORILObject', 'CBORILByteString', 'CBORILTextString', 'CBORILList', 'CBORILDict',
     'CBORError', 'EncodingError', 'DecodingError', 'IllFormedError', 'InvalidError',
     'BadInitialByteError', 'MisplacedBreakError', 'BadSimpleError', 'UnexpectedEOFError',
-    'NotEOFError', 'TagTypeError', 'TagValueError', 'StringEncodingError', 'DuplicateKeyError',
-    'DeterministicError',
+    'UnconsumedDataError', 'TagTypeError', 'TagValueError', 'StringEncodingError',
+    'DuplicateKeyError', 'DeterministicError',
 )
 
 
@@ -56,7 +56,7 @@ __all__ = (
 #       MisplacedBreakError
 #       BadSimpleError
 #       UnexpectedEOFError
-#       NotEOFError
+#       UnconsumedDataError
 #     InvalidError
 #       TagTypeError
 #       TagValueError
@@ -99,7 +99,7 @@ class UnexpectedEOFError(IllFormedError):
     '''Indicates premature end-of-data'''
 
 
-class NotEOFError(IllFormedError):
+class UnconsumedDataError(IllFormedError):
     '''Indicates data remains in the byte stream after decoding is complete'''
 
 

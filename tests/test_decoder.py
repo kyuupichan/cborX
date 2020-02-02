@@ -473,7 +473,7 @@ def test_cyclic_complex():
     (False, int),
 ])
 def test_retain_bignums(retain, cls):
-    value = loads(bytes.fromhex('c24000'), retain_bignums=retain)
+    value = loads(bytes.fromhex('c240'), retain_bignums=retain)
     assert isinstance(value, cls)
 
 
@@ -500,6 +500,15 @@ def my_simple_value(value):
 def test_simple_value(value, result):
     encoding = dumps(CBORSimple(value))
     assert loads(encoding, simple_value=my_simple_value) == result
+
+
+def test_check_eof_false():
+    assert loads(bytes(2), check_eof=False) == 0
+
+
+def test_check_eof_true():
+    with pytest.raises(UnconsumedDataError):
+        loads(bytes(2), check_eof=True)
 
 
 @pytest.mark.parametrize("cls", [bytearray, memoryview])
