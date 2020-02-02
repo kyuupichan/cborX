@@ -85,16 +85,27 @@ def test_BigFloat():
     a = BigFloat(2, 3)
     b = BigFloat(2, 3)
     c = BigFloat(3, -6)
+    d = BigFloat(1, 4)
 
     assert a == b
     assert a != c
+    assert a == d
+    assert a == Decimal(16)
+    assert c == Decimal(0.046875)
+    assert a == 16.0
+    assert a == 16
+    assert a > c
+    assert c < a
+    assert a < Decimal(17)
+    assert a <= Decimal(17)
+    assert Decimal(15) < a
+    assert Decimal(15) <= a
+    assert Decimal(17) > a
+    assert Decimal(17) >= a
+    assert a >= 15.0
+    assert 15 <= a
+
     assert repr(a) == 'BigFloat(mantissa=2, exponent=3)'
-
-    with pytest.raises(TypeError):
-        a < b
-
-    assert a.to_decimal() == Decimal(16)
-    assert c.to_decimal() == Decimal(0.046875)
 
 
 @pytest.mark.parametrize("value", [0, 1, 15, 19, 32, 128, 255])

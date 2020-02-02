@@ -166,12 +166,19 @@ class CBORILDict(CBORILObject):
         return b'\xbf' + bjoin(parts) + b'\xff'
 
 
-@attr.s(slots=True, frozen=True, order=False)
+@total_ordering
+@attr.s(slots=True, frozen=True, eq=False, order=False)
 class BigFloat:
     '''Represents a BigFloat.  Value is mantissa * pow(2, exponent).  There is
     no representation of infinities or NaNs, use float or Decimal for those.'''
     mantissa = attr.ib()
     exponent = attr.ib()
+
+    def __eq__(self, other):
+        return self.to_decimal() == other
+
+    def __lt__(self, other):
+        return self.to_decimal() < other
 
     def __encode_cbor__(self, encoder):
         return encoder._encode_exponent_mantissa(5, self.exponent, self.mantissa)
