@@ -96,6 +96,8 @@ def test_BigNum():
     assert b != 1
     with pytest.raises(TypeError):
         a >= 0
+    with pytest.raises(TypeError):
+        BigNum(0.0)
 
 
 

@@ -494,6 +494,10 @@ def test_unknown_type():
         dumps(dumps)
 
 
+def test_bignum():
+    assert dumps(BigNum(0)).hex() == 'c240'
+
+
 def test_dump():
     obj = BytesIO()
     dump('IETF', obj)

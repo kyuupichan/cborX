@@ -374,7 +374,7 @@ class CBORDecoder:
                 raise TagTypeError('invalid IP network encoding {pair!r}')
             try:
                 return ip_network(pair, strict=False)
-            except ValueError:
+            except (ValueError, TypeError):  # library bug raises a TypeError in some cases
                 raise TagValueError(f'invalid IP network {pair}') from None
 
     def decode_ordered_dict(self, _tag_value):

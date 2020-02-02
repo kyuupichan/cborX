@@ -279,6 +279,9 @@ def test_truncated(encoding):
     ('d81d05', 'non-existent shared reference'),
     ('d90102d81c81d81d00', 'non-existent shared reference'),
     ('d9010443c00a0a', 'invalid IP address'),
+    ('d81e820100', 'rational has zero denominator'),
+    ('d90105a24400000000000000', 'IP network must be encoded as a single-entry map'),
+    ('d90105a1440000000020', 'invalid IP network'),
 ])
 def test_tagged_value_error(encoding, match):
     with pytest.raises(TagValueError, match=match):
@@ -296,11 +299,13 @@ def test_tagged_value_error(encoding, match):
     ('c48102', 'decimal must be encoded'),
     ('c483020202', 'decimal must be encoded as'),
     ('c40000', 'decimal must be encoded as'),
+    ('c4820040', 'decimal has an invalid mantissa'),
     ('c4824040', 'decimal has an invalid exponent b\'\''),
     ('c482c24001', 'decimal has an invalid exponent BigNum\\(value=0\\)'),
     ('c58102', 'bigfloat must be encoded'),
     ('c583020202', 'bigfloat must be encoded as'),
     ('c50000', 'bigfloat must be encoded as'),
+    ('c5820040', 'bigfloat has an invalid mantissa'),
     ('c5824040', 'bigfloat has an invalid exponent b\'\''),
     ('c582c24000', 'bigfloat has an invalid exponent BigNum\\(value=0\\)'),
     ('d81e8102', 'rational must be encoded'),
@@ -316,6 +321,7 @@ def test_tagged_value_error(encoding, match):
     ('d9011080', 'ordered map not encoded as a map'),
     ('d81d60', 'shared reference must be an integer'),
     ('d81d80', 'shared reference must be an integer'),
+    ('d845820102', 'array must be encoded as a byte string'),
 ])
 def test_tagged_type_error(encoding, match):
     with pytest.raises(TagTypeError, match=match):
@@ -460,6 +466,15 @@ def test_cyclic_complex():
     result = loads(encoding)
     assert len(result) == 3
     assert result[2]['a'][0] is result
+
+
+@pytest.mark.parametrize("retain, cls", [
+    (True, BigNum),
+    (False, int),
+])
+def test_retain_bignums(retain, cls):
+    value = loads(bytes.fromhex('c24000'), retain_bignums=retain)
+    assert isinstance(value, cls)
 
 
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])
