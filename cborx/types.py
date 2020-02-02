@@ -27,6 +27,7 @@
 
 from collections import OrderedDict
 from collections.abc import Mapping
+from functools import total_ordering
 from decimal import Decimal
 
 import attr
@@ -51,31 +52,22 @@ class CBOREOFError(CBORDecodingError):
     '''Exception raised on premature end-of-data'''
 
 
+@attr.s(slots=True, order=True, frozen=True)
 class CBORTag:
     '''Represents a value wrapped by a CBOR tag'''
 
-    def __init__(self, tag, value):
-        if not isinstance(tag, int):
-            raise TypeError(f'tag {tag} must be an integer')
-        if not 0 <= tag < 65536:
-            raise ValueError(f'tag value {tag} out of range')
-        self.tag = tag
-        self.value = value
+    tag = attr.ib()
+    value = attr.ib()
 
-    def __eq__(self, other):
-        return (isinstance(other, CBORTag)
-                and self.tag == other.tag and self.value == other.value)
-
-    def __le__(self, other):
-        if not isinstance(other, CBORTag):
-            raise TypeError('a CBORTag cannot be compared with a different type')
-        return self.tag < other.tag
+    @tag.validator
+    def _validate_tag(self, attribute, value):
+        if not isinstance(value, int):
+            raise TypeError(f'tag {value} must be an integer')
+        if value < 0 or value > 18446744073709551615:
+            raise ValueError(f'tag {value} out of range')
 
     def __encode_cbor__(self, encoder):
         return encode_length(self.tag, 0xc0) + encoder.encode_item(self.value)
-
-    def __repr__(self):
-        return f'<CBORTag {self.tag} {self.value!r}>'
 
 
 class CBORUndefined:
@@ -85,13 +77,14 @@ class CBORUndefined:
         return b'\xf7'
 
     def __repr__(self):
-        return '<Undefined>'
+        return 'Undefined'
 
 
 # A singleton
 Undefined = CBORUndefined()
 
 
+@attr.s(slots=True, order=True, frozen=True)
 class CBORSimple:
     '''Represents a CBOR Simple object'''
 
@@ -102,15 +95,14 @@ class CBORSimple:
         23: Undefined,
     }
 
-    def __init__(self, value):
+    value = attr.ib()
+
+    @value.validator
+    def _validate_value(self, attribute, value):
         if not isinstance(value, int):
             raise TypeError(f'simple value {value} must be an integer')
         if not ((0 <= value <= 19) or (32 <= value <= 255)):
             raise ValueError(f'simple value {value} out of range')
-        self.value = value
-
-    def __eq__(self, other):
-        return isinstance(other, CBORSimple) and self.value == other.value
 
     def __encode_cbor__(self, encoder):
         if self.value <= 31:
@@ -174,7 +166,7 @@ class CBORILDict(CBORILObject):
         return b'\xbf' + bjoin(parts) + b'\xff'
 
 
-@attr.s(slots=True, frozen=True)
+@attr.s(slots=True, frozen=True, order=False)
 class BigFloat:
     '''Represents a BigFloat.  Value is mantissa * pow(2, exponent).  There is
     no representation of infinities or NaNs, use float or Decimal for those.'''
@@ -218,7 +210,7 @@ class FrozenDict(Mapping):
         return self._hash
 
     def __repr__(self):
-        return f'<{self.__class__.__name__}, {self._dict!r}>'
+        return f'<{self.__class__.__name__} {self._dict!r}>'
 
 
 class FrozenOrderedDict(FrozenDict):

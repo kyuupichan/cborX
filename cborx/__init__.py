@@ -10,5 +10,5 @@ from cborx.types import (
     Undefined, CBORSimple, CBORTag,
     CBORError, CBOREncodingError, CBORDecodingError,
     CBORILObject, CBORILByteString, CBORILTextString, CBORILList, CBORILDict,
-    FrozenDict, FrozenOrderedDict,
+    FrozenDict, FrozenOrderedDict, BigFloat,
 )
