@@ -87,7 +87,7 @@ default_tag_decoders.update({tag: 'decode_array' for tag in tag_to_typecode_map}
 class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
-    def __init__(self, read, retain_bignums=False, tag_decoders=None):
+    def __init__(self, read, retain_bignums=False, tag_decoders=None, simple_value=None):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -107,6 +107,7 @@ class CBORDecoder:
             self._flags |= DecoderFlags.RETAIN_BIGNUMS
         self._custom_tag_decoders = tag_decoders or {}
         self._tag_decoders = {}
+        self._simple_value = simple_value or CBORSimple
 
     @contextmanager
     def flags_set(self, mask):
@@ -250,15 +251,15 @@ class CBORDecoder:
 
     def decode_simple(self, first_byte):
         value = first_byte & 0x1f
-        if value < 20 or value > 31:
-            return CBORSimple(value)
+        if value < 20:
+            return self._simple_value(value)
         if value < 24:
             return CBORSimple.assigned_values[value]
         if value == 24:
             value = ord(self.read(1))
             if value < 32:
                 raise BadSimpleError(f'simple value 0x{value:x} encoded with extra byte')
-            return CBORSimple(value)
+            return self._simple_value(value)
         if value < 28:
             value, = be_float_unpackers[value - 25](self.read(1 << (value - 24)))
             return value

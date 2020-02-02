@@ -483,6 +483,25 @@ def test_invalid_simple(encoding):
         loads(bytes.fromhex(encoding))
 
 
+def my_simple_value(value):
+    if value == 2:
+        return Ellipsis
+    if value == 44:
+        return all
+    return CBORSimple(value)
+
+
+@pytest.mark.parametrize("value, result", [
+    (0, CBORSimple(0)),
+    (2, Ellipsis),
+    (41, CBORSimple(41)),
+    (44, all),
+])
+def test_simple_value(value, result):
+    encoding = dumps(CBORSimple(value))
+    assert loads(encoding, simple_value=my_simple_value) == result
+
+
 @pytest.mark.parametrize("cls", [bytearray, memoryview])
 def test_loads_special(cls):
     assert loads(cls(bytes.fromhex('6449455446'))) == 'IETF'
