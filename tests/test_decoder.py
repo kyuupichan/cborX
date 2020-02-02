@@ -334,8 +334,9 @@ def test_decode_set():
 
 
 def test_custom_tag_decoder():
-    def tag_800_handler(decoder):
+    def tag_800_handler(decoder, tag_value):
         assert isinstance(decoder, CBORDecoder)
+        assert tag_value == 800
         return decoder.decode_item()[-1]
 
     # dumps([CBORTag(800, 'tag'), CBORTag(800, 'tab')]).hex()

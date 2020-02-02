@@ -63,8 +63,8 @@ be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
 default_tag_decoders = {
     0: 'decode_datetime_text',
     1: 'decode_timestamp',
-    2: 'decode_unsigned_bignum',
-    3: 'decode_negative_bignum',
+    2: 'decode_bignum',
+    3: 'decode_bignum',
     4: 'decode_decimal',
     5: 'decode_bigfloat',
     28: 'decode_shared',
@@ -238,7 +238,7 @@ class CBORDecoder:
                     return CBORTag(tag_value, self.decode_item())
                 decoder = getattr(self.__class__, decoder_name)
             self._tag_decoders[tag_value] = decoder
-        return decoder(self)
+        return decoder(self, tag_value)
 
     def decode_simple(self, first_byte):
         value = first_byte & 0x1f
@@ -258,7 +258,7 @@ class CBORDecoder:
             self.decode_length(first_byte)  # Raises as unassigned
         raise CBORDecodingError('CBOR break outside indefinite-length object')
 
-    def decode_datetime_text(self):
+    def decode_datetime_text(self, _tag_value):
         text = self.decode_item()
         if not isinstance(text, str):
             raise CBORDecodingError('tagged date and time is not text')
@@ -267,7 +267,7 @@ class CBORDecoder:
         except ValueError:
             raise CBORDecodingError(f'invalid date and time text: {text}')
 
-    def decode_timestamp(self):
+    def decode_timestamp(self, _tag_value):
         # Bignums are invalid as timestamps
         with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
             timestamp = self.decode_item()
@@ -275,22 +275,16 @@ class CBORDecoder:
             raise CBORDecodingError('tagged timestamp is not a plain integer or float')
         return datetime.fromtimestamp(timestamp, timezone.utc)
 
-    def _decode_bignum(self, is_negative):
+    def decode_bignum(self, tag_value):
         bignum_encoding = self.decode_item()
         if not isinstance(bignum_encoding, bytes):
             raise CBORDecodingError('bignum payload must be a byte string')
         value = int.from_bytes(bignum_encoding, byteorder='big')
-        if is_negative:
+        if tag_value == 0x03:
             value = -1 - value
         if self._flags & DecoderFlags.RETAIN_BIGNUMS:
             return BigNum(value)
         return value
-
-    def decode_unsigned_bignum(self):
-        return self._decode_bignum(False)
-
-    def decode_negative_bignum(self):
-        return self._decode_bignum(True)
 
     def _decode_mantissa_exponent(self, type_str):
         # Retain bignums to catch invalid exponent encodings
@@ -307,15 +301,15 @@ class CBORDecoder:
             raise CBORDecodingError(f'{type_str} has an invalid mantissa {mantissa}')
         return mantissa, exponent
 
-    def decode_decimal(self):
+    def decode_decimal(self, _tag_value):
         mantissa, exponent = self._decode_mantissa_exponent('decimal')
         return Decimal(mantissa).scaleb(exponent)
 
-    def decode_bigfloat(self):
+    def decode_bigfloat(self, _tag_value):
         mantissa, exponent = self._decode_mantissa_exponent('bigfloat')
         return BigFloat(mantissa, exponent)
 
-    def decode_rational(self):
+    def decode_rational(self, _tag_value):
         parts = self.decode_item()
         if (not isinstance(parts, Sequence) or
                 len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
@@ -323,19 +317,19 @@ class CBORDecoder:
         numerator, denominator = parts
         return Fraction(numerator, denominator)
 
-    def decode_regexp(self):
+    def decode_regexp(self, _tag_value):
         pattern = self.decode_item()
         if not isinstance(pattern, str):
             raise CBORDecodingError('a regexp must be encoded as a text string')
         return re.compile(pattern)
 
-    def decode_uuid(self):
+    def decode_uuid(self, _tag_value):
         uuid = self.decode_item()
         if not isinstance(uuid, bytes):
             raise CBORDecodingError('a UUID must be encoded as a byte string')
         return UUID(bytes=uuid)
 
-    def decode_set(self):
+    def decode_set(self, _tag_value):
         with self.flags_set(DecoderFlags.IMMUTABLE):
             members = self.decode_item()
         if not isinstance(members, Sequence):
@@ -343,7 +337,7 @@ class CBORDecoder:
         cls = frozenset if self._flags & DecoderFlags.IMMUTABLE else set
         return cls(members)
 
-    def decode_ip_address(self):
+    def decode_ip_address(self, _tag_value):
         addr_bytes = self.decode_item()
         if not isinstance(addr_bytes, bytes):
             raise CBORDecodingError('an IP address must be encoded as a byte string')
@@ -352,7 +346,7 @@ class CBORDecoder:
         except ValueError:
             raise CBORDecodingError(f'invalid IP address: {addr_bytes}') from None
 
-    def decode_ip_network(self):
+    def decode_ip_network(self, _tag_value):
         # For some daft reason a one-element dictionary was chosen over a pair
         value = self.decode_item()
         if not isinstance(value, Mapping) or len(value) != 1:
@@ -363,7 +357,7 @@ class CBORDecoder:
             except (ValueError, TypeError):
                 raise CBORDecodingError(f'invalid IP network: {pair}') from None
 
-    def decode_ordered_dict(self):
+    def decode_ordered_dict(self, _tag_value):
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
         self._flags |= DecoderFlags.ORDERED
         result = self.decode_item()
@@ -371,7 +365,7 @@ class CBORDecoder:
             raise CBORDecodingError('ordered map tag enclosed a non-map')
         return result
 
-    def decode_shared(self):
+    def decode_shared(self, _tag_value):
         shared_id = next(self._shared_id)
         self._pending_id = shared_id
         value = self.decode_item()
@@ -379,7 +373,7 @@ class CBORDecoder:
         self._shared_ids[shared_id] = value
         return value
 
-    def decode_shared_ref(self):
+    def decode_shared_ref(self, _tag_value):
         shared_id = self.decode_item()
         try:
             return self._shared_ids[shared_id]
