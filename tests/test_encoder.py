@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
 from fractions import Fraction
 from functools import partial
+from io import BytesIO
 from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 import re
@@ -90,28 +91,31 @@ def test_encode_dict(value, encoding):
 
 
 @pytest.mark.parametrize("value, encoding", (
-    (False, b'\xf4'),
-    (True, b'\xf5'),
-    (None, b'\xf6'),
-    (0.0, bytes.fromhex('f90000')),
-    (-0.0, bytes.fromhex('f98000')),
-    (1.0, bytes.fromhex('f93c00')),
-    (1.1, bytes.fromhex('fb3ff199999999999a')),
-    (1.5, bytes.fromhex('f93e00')),
-    (65504.0, bytes.fromhex('f97bff')),
-    (100000.0, bytes.fromhex('fa47c35000')),
-    (3.4028234663852886e+38, bytes.fromhex('fa7f7fffff')),
-    (1.0e+300, bytes.fromhex('fb7e37e43c8800759c')),
-    (5.960464477539063e-8, bytes.fromhex('f90001')),
-    (0.00006103515625, bytes.fromhex('f90400')),
-    (-4.0, bytes.fromhex('f9c400')),
-    (-4.1, bytes.fromhex('fbc010666666666666')),
-    (math.inf, bytes.fromhex('f97c00')),
-    (math.nan, bytes.fromhex('f97e00')),
-    (-math.inf, bytes.fromhex('f9fc00')),
+    (False, 'f4'),
+    (True, 'f5'),
+    (None, 'f6'),
+    (0.0, 'f90000'),
+    (-0.0, 'f98000'),
+    (1.0, 'f93c00'),
+    (1.1, 'fb3ff199999999999a'),
+    (1.5, 'f93e00'),
+    (100000.0, 'fa47c35000'),
+    (65504.0, 'f97bff'),
+    (100000.0, 'fa47c35000'),
+    # Can be encoded as a 4-byte float without losing precision, but not as a 2-byte float
+    (1.100000023841858, 'fa3f8ccccd'),
+    (3.4028234663852886e+38, 'fa7f7fffff'),
+    (1.0e+300, 'fb7e37e43c8800759c'),
+    (5.960464477539063e-8, 'f90001'),
+    (0.00006103515625, 'f90400'),
+    (-4.0, 'f9c400'),
+    (-4.1, 'fbc010666666666666'),
+    (math.inf, 'f97c00'),
+    (math.nan, 'f97e00'),
+    (-math.inf, 'f9fc00'),
 ))
 def test_encode_simple(value, encoding):
-    assert dumps(value) == encoding
+    assert dumps(value) == bytes.fromhex(encoding)
 
 
 def _indefinite_bytes():
@@ -159,6 +163,11 @@ def _indefinite_dict():
 ))
 def test_encode_indefinite_length(value, encoding):
     assert dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False) == encoding
+
+
+def test_realized_IL_unsorted():
+    # For code coverage
+    assert dumps(CBORILList(iter((2, 1))), sort_method=CBORSortMethod.UNSORTED).hex() == '820201'
 
 
 def test_namedtuple():
@@ -408,6 +417,11 @@ def test_deterministic_IL(value):
         assert dumpsd(CBORILList(iter(value))) == dumpsd(value)
 
 
+def test_deterministic_options():
+    with pytest.raises(ValueError, match='deterministic encoder requires'):
+        dumps(0, deterministic=True, sort_method=CBORSortMethod.UNSORTED)
+
+
 @pytest.mark.parametrize('sort_method, expected', [
     (CBORSortMethod.UNSORTED, 'a8626161f6617af61864f68120f620f6811864f6f4f60af6'),
     (CBORSortMethod.LEXICOGRAPHIC, 'a80af61864f620f6617af6626161f6811864f68120f6f4f6'),
@@ -429,6 +443,15 @@ def test_float_style(float_style, expected):
     items = [8.9, 1.5, math.inf, -math.inf, math.nan]
     result = dumps(items, float_style=float_style).hex()
     assert result == expected
+
+
+def test_bigfloat_exponents():
+    good = BigFloat(1, 18446744073709551615)
+    bad  = BigFloat(1, 18446744073709551616)
+
+    assert dumps(good).hex() == 'c5821bffffffffffffffff01'
+    with pytest.raises(CBOREncodingError, match='overflow encoding'):
+        dumps(bad)
 
 
 string1 = 'a long string'
@@ -457,3 +480,21 @@ def test_recursive_type():
     b.append(a)
     result = dumps(a, shared_types={list, dict})
     assert result == bytes.fromhex('d81c83 0102 d81c83 0304d81d00')
+
+
+def test_recursive_fail():
+    a = [1, 2]
+    a.append(a)
+    with pytest.raises(CBOREncodingError, match='self-referential object detected'):
+        dumps(a)
+
+
+def test_unknown_type():
+    with pytest.raises(CBOREncodingError, match='do not know how to encode object of type'):
+        dumps(dumps)
+
+
+def test_dump():
+    obj = BytesIO()
+    dump('IETF', obj)
+    assert obj.getvalue().hex() == '6449455446'
