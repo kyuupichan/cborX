@@ -1,5 +1,6 @@
 import math
 import re
+from array import array
 from collections import OrderedDict
 from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
@@ -85,6 +86,18 @@ from cborx import *
     {FrozenOrderedDict([('b', 1), ('c', 2), ('a', 5)]): None},
     BigFloat(123, -16),
     BigFloat(12345678901234567890123456789012345678901234567890123456789012345678901234567, -256),
+    array('b', [-128, -5, 127]),
+    array('B', [0, 5, 255]),
+    array('h', [-256, 0, 256]),
+    array('H', [0, 5, 65535]),
+    array('i', [-4_000_000, 5_678_902]),
+    array('I', [4_000_000, 1]),
+    array('l', [-4_000_000, 5_678_902]),
+    array('L', [4_000_000, 3, 1, 1 << 31]),
+    array('q', [-(1 << 40), 1 << 63 - 1]),
+    array('Q', [0, 1 << 64 - 1, 5]),
+    array('f', [0.1, -56.25, 5_000_000.0, math.inf, - math.inf]),
+    array('d', [0.1, -56.25, 5_000_000.0, math.inf, - math.inf]),
 ))
 def test_round_trip(value):
     encoding = dumps(value)

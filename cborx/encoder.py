@@ -43,7 +43,7 @@ from cborx.packing import (
 from cborx.types import (
     FrozenDict, FrozenOrderedDict, CBOREncodingError, encode_length
 )
-from cborx.util import uint_to_be_bytes, bjoin, sjoin
+from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map
 
 # TODO:
 #
@@ -245,12 +245,9 @@ class CBOREncoder:
             return b'\xf9\x7e\x00'
 
     def encode_tag(self, value):
-        assert isinstance(value, int)
-        assert 0 <= value < 65536
         return encode_length(value, 0xc0)
 
     def encode_datetime(self, value):
-        assert isinstance(value, datetime)
         if not value.tzinfo:
             if self.tzinfo:
                 value = value.replace(tzinfo=self.tzinfo)
@@ -272,7 +269,6 @@ class CBOREncoder:
             return self.encode_tag(0) + self.encode_text_string(text)
 
     def encode_date(self, value):
-        assert isinstance(value, date)
         return self.encode_tag(0) + self.encode_text_string(value.isoformat())
 
     def _encode_exponent_mantissa(self, tag, exponent, mantissa):
@@ -280,7 +276,6 @@ class CBOREncoder:
         return self.encode_tag(tag) + self._make_list(2, parts)
 
     def encode_decimal(self, value):
-        assert isinstance(value, Decimal)
         dt = value.as_tuple()
         # Is this decimal finite?
         if isinstance(dt.exponent, int):
@@ -292,30 +287,24 @@ class CBOREncoder:
             return self.encode_float(float(value))
 
     def encode_rational(self, value):
-        assert isinstance(value, Fraction)
         return self.encode_tag(30) + self.encode_ordered_list((value.numerator, value.denominator))
 
     def encode_regexp(self, value):
-        assert isinstance(value, regexp_type)
         return self.encode_tag(35) + self.encode_text_string(value.pattern)
 
     def encode_uuid(self, value):
-        assert isinstance(value, UUID)
         return self.encode_tag(37) + self.encode_byte_string(value.bytes)
 
     def encode_ip_address(self, value):
-        assert isinstance(value, (IPv4Address, IPv6Address))
         return self.encode_tag(260) + self.encode_byte_string(value.packed)
 
     def encode_ip_network(self, value):
-        assert isinstance(value, (IPv4Network, IPv6Network))
         # For some daft reason a one-element dictionary was chosen over a pair
         pairs = [(value.network_address.packed, value.prefixlen)]
         return self.encode_tag(261) + self.encode_sorted_dict(pairs, CBORSortMethod.UNSORTED)
 
     def encode_array(self, value):
-        assert isinstance(value, array)
-        tag = array_typecode_tags.get(value.typecode)
+        tag = typecode_to_tag_map.get(value.typecode)
         if not tag:
             raise CBOREncodingError(f'cannot encode arrays with typecode {value.typecode}')
         return self.encode_tag(tag) + self.encode_byte_string(value.tobytes())
@@ -333,21 +322,6 @@ class CBOREncoder:
             raise CBOREncodingError('self-referential object detected') from None
 
 
-def _typecode_tag(typecode):
-    if typecode == 'f':
-        return 81 if array('f', [1]).tobytes() == pack_be_float4(1) else 85
-    if typecode == 'd':
-        return 82 if array('d', [1]).tobytes() == pack_be_float8(1) else 86
-    a = array(typecode, [1])
-    return (
-        63 + a.itemsize.bit_length() +
-        (4 if (a.tobytes()[0] == 1 and a.itemsize > 1) else 0) +
-        (8 if typecode.lower() == typecode else 0)
-    )
-
-
-regexp_type = type(re.compile(''))
-array_typecode_tags = {typecode: _typecode_tag(typecode) for typecode in 'bBhHiIlLqQfd'}
 default_encode_funcs = {
     int: 'encode_int',
     bytes: 'encode_byte_string',
@@ -369,7 +343,7 @@ default_encode_funcs = {
     datetime: 'encode_datetime',
     date: 'encode_date',
     Decimal: 'encode_decimal',
-    regexp_type: 'encode_regexp',
+    type(re.compile('')): 'encode_regexp',
     UUID: 'encode_uuid',
     Fraction: 'encode_rational',
     IPv4Address: 'encode_ip_address',

@@ -26,7 +26,10 @@
 '''Utility functions'''
 
 import re
+from array import array
 from datetime import datetime, date, timezone, time, timedelta
+
+from cborx.packing import pack_be_float4, pack_be_float8
 
 bjoin = b''.join
 sjoin = ''.join
@@ -61,5 +64,23 @@ def datetime_from_enhanced_RFC3339_text(text):
 
 
 def uint_to_be_bytes(value):
-    '''Converts an unsigned integer to a big-endian sequence of bytes'''
+    '''Convert an unsigned integer to a big-endian sequence of bytes'''
     return value.to_bytes((value.bit_length() + 7) // 8, 'big')
+
+
+def typecode_tag(typecode):
+    '''Convert array.array typecodes to tag values.'''
+    if typecode == 'f':
+        return 81 if array('f', [1]).tobytes() == pack_be_float4(1) else 85
+    if typecode == 'd':
+        return 82 if array('d', [1]).tobytes() == pack_be_float8(1) else 86
+    a = array(typecode, [1])
+    return (
+        63 + a.itemsize.bit_length() +
+        (4 if (a.tobytes()[0] == 1 and a.itemsize > 1) else 0) +
+        (8 if typecode.lower() == typecode else 0)
+    )
+
+
+typecode_to_tag_map = {typecode: typecode_tag(typecode) for typecode in 'bBhHiIlLqQfd'}
+tag_to_typecode_map = {value: key for key, value in typecode_to_tag_map.items()}

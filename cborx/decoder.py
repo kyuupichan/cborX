@@ -27,6 +27,7 @@
 
 import itertools
 import re
+from array import array
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
@@ -48,7 +49,7 @@ from cborx.types import (
     CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag,
     BigNum, BigFloat
 )
-from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin
+from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
 
 
 class DecoderFlags:
@@ -77,6 +78,7 @@ default_tag_decoders = {
     261: 'decode_ip_network',
     272: 'decode_ordered_dict',
 }
+default_tag_decoders.update({tag: 'decode_array' for tag in tag_to_typecode_map})
 
 
 class CBORDecoder:
@@ -316,6 +318,12 @@ class CBORDecoder:
             raise CBORDecodingError('a rational must be encoded as a 2-integer list')
         numerator, denominator = parts
         return Fraction(numerator, denominator)
+
+    def decode_array(self, tag_value):
+        array_bytes = self.decode_item()
+        if not isinstance(array_bytes, bytes):
+            raise CBORDecodingError('an array must be encoded as a byte string')
+        return array(tag_to_typecode_map[tag_value], array_bytes)
 
     def decode_regexp(self, _tag_value):
         pattern = self.decode_item()
