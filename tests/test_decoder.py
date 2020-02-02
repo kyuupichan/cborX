@@ -74,7 +74,7 @@ def test_decode_indefinite_length_text_string(encoding, expected):
 
 
 def test_decode_indefinite_length_text_string_split_utf8():
-    with pytest.raises(UnicodeDecodeError):
+    with pytest.raises(StringEncodingError):
         loads(bytes.fromhex('7f 61e3 628182 ff'))
 
 
@@ -168,7 +168,7 @@ def test_decode_nan(encoding):
     'indefinite map value',
 ])
 def test_misplaced_break(encoding):
-    with pytest.raises(CBORDecodingError, match='CBOR break outside indefinite-length object'):
+    with pytest.raises(MisplacedBreakError):
         loads(bytes.fromhex(encoding))
 
 
@@ -200,7 +200,7 @@ def test_misplaced_break(encoding):
     'simple-0',
 ])
 def test_bad_il_text_string(encoding):
-    with pytest.raises(CBORDecodingError, match='invalid in indefinite-length text string'):
+    with pytest.raises(BadInitialByteError, match='bad initial byte 0x'):
         loads(bytes.fromhex(encoding))
 
 
@@ -232,7 +232,7 @@ def test_bad_il_text_string(encoding):
     'simple-0',
 ])
 def test_bad_il_byte_string(encoding):
-    with pytest.raises(CBORDecodingError, match='invalid in indefinite-length'):
+    with pytest.raises(BadInitialByteError, match='in indefinite-length byte string'):
         loads(bytes.fromhex(encoding))
 
 
@@ -247,7 +247,7 @@ def test_bad_il_byte_string(encoding):
     'fc', 'fd', 'fe',
 ])
 def test_unassigned(encoding):
-    with pytest.raises(CBORDecodingError, match='ill-formed CBOR object with initial byte '):
+    with pytest.raises(BadInitialByteError, match='bad initial byte 0x'):
         loads(bytes.fromhex(encoding))
 
 
@@ -270,13 +270,23 @@ def test_unassigned(encoding):
     'f8',  # missing payload
 ])
 def test_truncated(encoding):
-    with pytest.raises(CBORDecodingError, match='need '):
+    with pytest.raises(UnexpectedEOFError, match='need '):
+        loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding, match", [
+    ('c06161', 'invalid date and time text'),
+    ('d81d05', 'non-existent shared reference'),
+    ('d90102d81c81d81d00', 'non-existent shared reference'),
+    ('d9010443c00a0a', 'invalid IP address'),
+])
+def test_tagged_value_error(encoding, match):
+    with pytest.raises(TagValueError, match=match):
         loads(bytes.fromhex(encoding))
 
 
 @pytest.mark.parametrize("encoding, match", [
     ('c000', 'date and time is not text'),
-    ('c06161', 'invalid date and time text'),
     ('c140', 'timestamp is not a plain integer or float'),
     ('c160', 'timestamp is not a plain integer or float'),
     # Bignum not permitted as timestamp
@@ -301,17 +311,14 @@ def test_truncated(encoding):
     ('d82500', 'UUID must be encoded as a byte string'),
     ('d9010200', 'set must be encoded as a list'),
     ('d9010400', 'IP address must be encoded as a byte string'),
-    ('d9010443c00a0a', 'invalid IP address'),
-    ('d9010500',' IP network must be encoded as a single-entry map'),
+    ('d9010500',' IP network must be encoded as a map'),
     ('d90105a144c0a80064420102', 'invalid IP network'),
-    ('d9011080', 'ordered map tag enclosed a non-map'),
-    ('d81d60', 'invalid shared reference'),
-    ('d81d80', 'invalid shared reference'),
-    ('d81d05', 'invalid shared reference'),
-    ('d90102d81c81d81d00', 'invalid shared reference'),
+    ('d9011080', 'ordered map not encoded as a map'),
+    ('d81d60', 'shared reference must be an integer'),
+    ('d81d80', 'shared reference must be an integer'),
 ])
-def test_invalid_tagged(encoding, match):
-    with pytest.raises(CBORDecodingError, match=match):
+def test_tagged_type_error(encoding, match):
+    with pytest.raises(TagTypeError, match=match):
         loads(bytes.fromhex(encoding))
 
 
@@ -457,7 +464,7 @@ def test_cyclic_complex():
 
 @pytest.mark.parametrize("encoding", ['f800', 'f81f'])
 def test_invalid_simple(encoding):
-    with pytest.raises(CBORDecodingError, match='simple value '):
+    with pytest.raises(BadSimpleError, match='simple value 0x'):
         loads(bytes.fromhex(encoding))
 
 

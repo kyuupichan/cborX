@@ -45,10 +45,14 @@ from cborx.packing import (
     unpack_be_float2, unpack_be_float4, unpack_be_float8,
 )
 from cborx.types import (
-    CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag,
-    BigNum, BigFloat
+    BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError, NotEOFError,
+    TagTypeError, TagValueError, StringEncodingError, DuplicateKeyError, DeterministicError,
+    FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat
 )
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
+
+
+__all__ = ('load', 'loads', 'CBORDecoder',)
 
 
 class DecoderFlags(IntEnum):
@@ -136,7 +140,7 @@ class CBORDecoder:
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
             return None
-        raise CBORDecodingError(f'ill-formed CBOR object with initial byte 0x{first_byte:x}')
+        raise BadInitialByteError(f'bad initial byte 0x{first_byte:x}')
 
     def decode_unsigned_int(self, first_byte):
         return self.decode_length(first_byte)
@@ -152,8 +156,8 @@ class CBORDecoder:
             elif first_byte == 0xff:
                 break
             else:
-                raise CBORDecodingError(f'CBOR object with initial byte {first_byte} '
-                                        f'invalid in indefinite-length byte string')
+                raise BadInitialByteError(f'bad initial byte 0x{first_byte:x} in '
+                                          f'indefinite-length byte string')
 
     def decode_byte_string(self, first_byte):
         length = self.decode_length(first_byte)
@@ -169,15 +173,18 @@ class CBORDecoder:
             elif first_byte == 0xff:
                 break
             else:
-                raise CBORDecodingError(f'CBOR object with initial byte {first_byte} '
-                                        f'invalid in indefinite-length text string')
+                raise BadInitialByteError(f'bad initial byte 0x{first_byte:x} in '
+                                          f'indefinite-length text string')
 
     def decode_text_string(self, first_byte):
         length = self.decode_length(first_byte)
         if length is None:
             return sjoin(self._text_string_parts())
         utf8_bytes = self.read(length)
-        return utf8_bytes.decode()
+        try:
+            return utf8_bytes.decode()
+        except UnicodeDecodeError:
+            raise StringEncodingError('invalid string encoding')
 
     def _list_parts(self):
         read = self.read
@@ -250,36 +257,36 @@ class CBORDecoder:
         if value == 24:
             value = ord(self.read(1))
             if value < 32:
-                raise CBORDecodingError(f'simple value {value} ecnoded with extension byte')
+                raise BadSimpleError(f'simple value 0x{value:x} encoded with extra byte')
             return CBORSimple(value)
         if value < 28:
             value, = be_float_unpackers[value - 25](self.read(1 << (value - 24)))
             return value
-        if value != 31:
-            self.decode_length(first_byte)  # Raises as unassigned
-        raise CBORDecodingError('CBOR break outside indefinite-length object')
+        if value == 31:
+            raise MisplacedBreakError('break stop code outside indefinite-length object')
+        raise BadInitialByteError(f'bad initial byte 0x{first_byte:x}')
 
     def decode_datetime_text(self, _tag_value):
         text = self.decode_item()
         if not isinstance(text, str):
-            raise CBORDecodingError('tagged date and time is not text')
+            raise TagTypeError('tagged date and time is not text')
         try:
             return datetime_from_enhanced_RFC3339_text(text)
         except ValueError:
-            raise CBORDecodingError(f'invalid date and time text: {text}')
+            raise TagValueError(f'invalid date and time text {text!r}')
 
     def decode_timestamp(self, _tag_value):
         # Bignums are invalid as timestamps
         with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
             timestamp = self.decode_item()
         if not isinstance(timestamp, (int, float)):
-            raise CBORDecodingError('tagged timestamp is not a plain integer or float')
+            raise TagTypeError('tagged timestamp is not a plain integer or float')
         return datetime.fromtimestamp(timestamp, timezone.utc)
 
     def decode_bignum(self, tag_value):
         bignum_encoding = self.decode_item()
         if not isinstance(bignum_encoding, bytes):
-            raise CBORDecodingError('bignum payload must be a byte string')
+            raise TagTypeError('bignum payload must be a byte string')
         value = int.from_bytes(bignum_encoding, byteorder='big')
         if tag_value == 0x03:
             value = -1 - value
@@ -292,14 +299,14 @@ class CBORDecoder:
         with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
             parts = self.decode_item()
         if not isinstance(parts, Sequence) or len(parts) != 2:
-            raise CBORDecodingError(f'{type_str} must be encoded as a list [exponent, mantissa]')
+            raise TagTypeError(f'{type_str} must be encoded as a list [exponent, mantissa]')
         exponent, mantissa = parts
         if not isinstance(exponent, int):  # Note: exponent bignum is invalid
-            raise CBORDecodingError(f'{type_str} has an invalid exponent {exponent}')
+            raise TagTypeError(f'{type_str} has an invalid exponent {exponent}')
         if isinstance(mantissa, BigNum):
             mantissa = mantissa.value
         elif not isinstance(mantissa, int):
-            raise CBORDecodingError(f'{type_str} has an invalid mantissa {mantissa}')
+            raise TagTypeError(f'{type_str} has an invalid mantissa {mantissa}')
         return mantissa, exponent
 
     def decode_decimal(self, _tag_value):
@@ -314,62 +321,68 @@ class CBORDecoder:
         parts = self.decode_item()
         if (not isinstance(parts, Sequence) or
                 len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
-            raise CBORDecodingError('a rational must be encoded as a 2-integer list')
+            raise TagTypeError('a rational must be encoded as a 2-integer list')
         numerator, denominator = parts
+        if denominator == 0:
+            raise TagValueError('rational has zero denominator')
         return Fraction(numerator, denominator)
 
     def decode_array(self, tag_value):
         array_bytes = self.decode_item()
         if not isinstance(array_bytes, bytes):
-            raise CBORDecodingError('an array must be encoded as a byte string')
+            raise TagTypeError('an array must be encoded as a byte string')
         return array(tag_to_typecode_map[tag_value], array_bytes)
 
     def decode_regexp(self, _tag_value):
         pattern = self.decode_item()
         if not isinstance(pattern, str):
-            raise CBORDecodingError('a regexp must be encoded as a text string')
+            raise TagTypeError('a regexp must be encoded as a text string')
         return re.compile(pattern)
 
     def decode_uuid(self, _tag_value):
         uuid = self.decode_item()
         if not isinstance(uuid, bytes):
-            raise CBORDecodingError('a UUID must be encoded as a byte string')
+            raise TagTypeError('a UUID must be encoded as a byte string')
         return UUID(bytes=uuid)
 
     def decode_set(self, _tag_value):
         with self.flags_set(DecoderFlags.IMMUTABLE):
             members = self.decode_item()
         if not isinstance(members, Sequence):
-            raise CBORDecodingError('a set must be encoded as a list')
+            raise TagTypeError('a set must be encoded as a list')
         cls = frozenset if self._flags & DecoderFlags.IMMUTABLE else set
         return cls(members)
 
     def decode_ip_address(self, _tag_value):
         addr_bytes = self.decode_item()
         if not isinstance(addr_bytes, bytes):
-            raise CBORDecodingError('an IP address must be encoded as a byte string')
+            raise TagTypeError('an IP address must be encoded as a byte string')
         try:
             return ip_address(addr_bytes)
         except ValueError:
-            raise CBORDecodingError(f'invalid IP address: {addr_bytes}') from None
+            raise TagValueError(f'invalid IP address: {addr_bytes}') from None
 
     def decode_ip_network(self, _tag_value):
         # For some daft reason a one-element dictionary was chosen over a pair
         value = self.decode_item()
-        if not isinstance(value, Mapping) or len(value) != 1:
-            raise CBORDecodingError('an IP network must be encoded as a single-entry map')
+        if not isinstance(value, Mapping):
+            raise TagTypeError('an IP network must be encoded as a map')
+        if len(value) != 1:
+            raise TagValueError('an IP network must be encoded as a single-entry map')
         for pair in value.items():
+            if not (isinstance(pair[0], bytes) and isinstance(pair[1], int)):
+                raise TagTypeError('invalid IP network encoding {pair!r}')
             try:
                 return ip_network(pair, strict=False)
-            except (ValueError, TypeError):
-                raise CBORDecodingError(f'invalid IP network: {pair}') from None
+            except ValueError:
+                raise TagValueError(f'invalid IP network {pair}') from None
 
     def decode_ordered_dict(self, _tag_value):
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
         self._flags |= DecoderFlags.ORDERED
         result = self.decode_item()
         if not isinstance(result, Mapping):
-            raise CBORDecodingError('ordered map tag enclosed a non-map')
+            raise TagTypeError('ordered map not encoded as a map')
         return result
 
     def decode_shared(self, _tag_value):
@@ -382,16 +395,18 @@ class CBORDecoder:
 
     def decode_shared_ref(self, _tag_value):
         shared_id = self.decode_item()
+        if not isinstance(shared_id, int):
+            raise TagTypeError(f'shared reference must be an integer')
         try:
             return self._shared_ids[shared_id]
-        except (TypeError, KeyError):
-            raise CBORDecodingError(f'invalid shared reference {shared_id}')
+        except KeyError:
+            raise TagValueError(f'non-existent shared reference {shared_id}') from None
 
     def read(self, n):
         result = self._read(n)
         if len(result) == n:
             return result
-        raise CBOREOFError(f'need {n:,d} bytes but only {len(result):,d} available')
+        raise UnexpectedEOFError(f'need {n:,d} bytes but only {len(result):,d} available')
 
     def decode_item(self):
         first_byte = ord(self.read(1))

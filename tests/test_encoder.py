@@ -250,7 +250,7 @@ def test_datetime_explicit_tzinfo(value, style, expected):
     'naive',
 ])
 def test_datetime_enoder_tzinfo(value, style, expected):
-    with pytest.raises(CBOREncodingError):
+    with pytest.raises(EncodingError):
         dumps(value, datetime_style=style)
     result = dumps(value, datetime_style=style, tzinfo=timezone.utc)
     assert result == bytes.fromhex(expected)
@@ -356,7 +356,7 @@ def test_array_encodings(value, expected):
 
 def test_array_fail():
     a = array('u', ['a'])
-    with pytest.raises(CBOREncodingError):
+    with pytest.raises(EncodingError):
         dumps(a)
 
 
@@ -450,7 +450,7 @@ def test_bigfloat_exponents():
     bad  = BigFloat(1, 18446744073709551616)
 
     assert dumps(good).hex() == 'c5821bffffffffffffffff01'
-    with pytest.raises(CBOREncodingError, match='overflow encoding'):
+    with pytest.raises(EncodingError, match='overflow encoding'):
         dumps(bad)
 
 
@@ -485,12 +485,12 @@ def test_recursive_type():
 def test_recursive_fail():
     a = [1, 2]
     a.append(a)
-    with pytest.raises(CBOREncodingError, match='self-referential object detected'):
+    with pytest.raises(EncodingError, match='self-referential object detected'):
         dumps(a)
 
 
 def test_unknown_type():
-    with pytest.raises(CBOREncodingError, match='do not know how to encode object of type'):
+    with pytest.raises(EncodingError, match='do not know how to encode object of type'):
         dumps(dumps)
 
 

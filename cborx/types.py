@@ -35,21 +35,97 @@ import attr
 from cborx.packing import pack_byte
 from cborx.util import bjoin, sjoin, encode_length
 
+__all__ = (
+    'Undefined', 'CBORSimple', 'CBORTag',
+    'FrozenDict', 'FrozenOrderedDict', 'BigFloat', 'BigNum',
+    'CBORILObject', 'CBORILByteString', 'CBORILTextString', 'CBORILList', 'CBORILDict',
+    'CBORError', 'EncodingError', 'DecodingError', 'IllFormedError', 'InvalidError',
+    'BadInitialByteError', 'MisplacedBreakError', 'BadSimpleError', 'UnexpectedEOFError',
+    'NotEOFError', 'TagTypeError', 'TagValueError', 'StringEncodingError', 'DuplicateKeyError',
+    'DeterministicError',
+)
+
+
+# Exception class hierarchy:
+#
+# CBORError
+#   EncodingError
+#   DecodingError
+#     IllFormedError
+#       BadInitialByteError
+#       MisplacedBreakError
+#       BadSimpleError
+#       UnexpectedEOFError
+#       NotEOFError
+#     InvalidError
+#       TagTypeError
+#       TagValueError
+#       StringEncodingError
+#       DuplicateKeyError
+#       DeterministicError
+
 
 class CBORError(Exception):
     '''Base exception of cborX library errors'''
 
 
-class CBORDecodingError(CBORError):
+class DecodingError(CBORError):
     '''Base exception of cborX decoding errors'''
 
 
-class CBOREncodingError(CBORError):
+class EncodingError(CBORError):
     '''Base exception of cborX encoding errors'''
 
 
-class CBOREOFError(CBORDecodingError):
-    '''Exception raised on premature end-of-data'''
+class IllFormedError(DecodingError):
+    '''Indicates ill-formed CBOR'''
+
+
+class BadInitialByteError(IllFormedError):
+    '''Indicates initial byte of an encoded object is bad'''
+    # This is also used for indefinite-length byte and text strings whose next item is not
+    # a definite-length string of the same type
+
+
+class MisplacedBreakError(IllFormedError):
+    '''Indicates a break was found outside an indefinite-length object'''
+
+
+class BadSimpleError(IllFormedError):
+    '''Indicates use of a simple value less than 32 encoded with an unnecessary extra byte'''
+
+
+class UnexpectedEOFError(IllFormedError):
+    '''Indicates premature end-of-data'''
+
+
+class NotEOFError(IllFormedError):
+    '''Indicates data remains in the byte stream after decoding is complete'''
+
+
+class InvalidError(DecodingError):
+    '''Indicates CBOR that is well-formed but that violates a validity rule'''
+
+
+class TagTypeError(InvalidError):
+    '''Indicates a tag with payload (or an element of it) of an invalid type'''
+
+
+class TagValueError(InvalidError):
+    '''Indicates a tag with payload (or an element of it) of an invalid value'''
+
+
+class StringEncodingError(InvalidError):
+    '''Indicates a string which could not be decoded to UTF-8'''
+
+
+class DuplicateKeyError(InvalidError):
+    '''Indicates a duplicate key was found when decoding a map'''
+
+
+class DeterministicError(InvalidError):
+    '''Indicates the CBOR encoding was not deterministic'''
+
 
 
 @attr.s(slots=True, order=True, frozen=True)

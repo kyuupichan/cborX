@@ -40,8 +40,14 @@ from uuid import UUID
 from cborx.packing import (
     pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
 )
-from cborx.types import FrozenDict, FrozenOrderedDict, CBOREncodingError
+from cborx.types import FrozenDict, FrozenOrderedDict, EncodingError
 from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map, encode_length
+
+
+__all__ = (
+    'dump', 'dumps', 'CBOREncoder', 'CBORDateTimeStyle', 'CBORFloatStyle', 'CBORSortMethod',
+)
+
 
 # TODO:
 #
@@ -139,7 +145,7 @@ class CBOREncoder:
                         encode_func = getattr(self, func_text)
                         break
                 else:
-                    raise CBOREncodingError(f'do not know how to encode object of type {vtype}')
+                    raise EncodingError(f'do not know how to encode object of type {vtype}')
         if used_type in self.shared_types:
             encode_func = partial(self._encode_shared, encode_func)
         self._encode_funcs[vtype] = encode_func
@@ -158,7 +164,7 @@ class CBOREncoder:
             pass
         if permit_bignum:
             return self.encode_bignum(value)
-        raise CBOREncodingError(f'overflow encoding {value:,d} as a standard integer')
+        raise EncodingError(f'overflow encoding {value:,d} as a standard integer')
 
     def encode_bignum(self, value):
         '''Encode an integer as a tagged bignum.'''
@@ -250,7 +256,7 @@ class CBOREncoder:
             if self.tzinfo:
                 value = value.replace(tzinfo=self.tzinfo)
             else:
-                raise CBOREncodingError('specify tzinfo option to encode a datetime '
+                raise EncodingError('specify tzinfo option to encode a datetime '
                                         'without tzinfo')
         if self.datetime_style == CBORDateTimeStyle.TIMESTAMP:
             tag = self.encode_tag(1)
@@ -304,7 +310,7 @@ class CBOREncoder:
     def encode_array(self, value):
         tag = typecode_to_tag_map.get(value.typecode)
         if not tag:
-            raise CBOREncodingError(f'cannot encode arrays with typecode {value.typecode}')
+            raise EncodingError(f'cannot encode arrays with typecode {value.typecode}')
         return self.encode_tag(tag) + self.encode_byte_string(value.tobytes())
 
     def encode_item(self, value):
@@ -317,7 +323,7 @@ class CBOREncoder:
         try:
             return self.encode_item(value)
         except RecursionError:
-            raise CBOREncodingError('self-referential object detected') from None
+            raise EncodingError('self-referential object detected') from None
 
 
 default_encode_funcs = {
