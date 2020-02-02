@@ -32,8 +32,9 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
-from fractions import Fraction
 from enum import IntEnum
+from fractions import Fraction
+from functools import partial
 from io import BytesIO
 from ipaddress import ip_address, ip_network
 from uuid import UUID
@@ -59,7 +60,7 @@ class DecoderFlags:
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
 be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
-tag_decoders = {
+default_tag_decoders = {
     0: 'decode_datetime_text',
     1: 'decode_timestamp',
     2: 'decode_unsigned_bignum',
@@ -81,7 +82,7 @@ tag_decoders = {
 class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
-    def __init__(self, read, retain_bignums=False):
+    def __init__(self, read, retain_bignums=False, tag_decoders=None):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -99,6 +100,8 @@ class CBORDecoder:
         self._flags = 0
         if retain_bignums:
             self._flags |= DecoderFlags.RETAIN_BIGNUMS
+        self._custom_tag_decoders = tag_decoders or {}
+        self._tag_decoders = {}
 
     @contextmanager
     def flags_set(self, mask):
@@ -226,10 +229,18 @@ class CBORDecoder:
 
     def decode_tag(self, first_byte):
         tag_value = self.decode_length(first_byte)
-        decoder = tag_decoders.get(tag_value)
-        if decoder is None:
-            return CBORTag(tag_value, self.decode_item())
-        return getattr(self, decoder)()
+        decoder = self._tag_decoders.get(tag_value)  # Cache
+        if not decoder:
+            decoder = self._custom_tag_decoders.get(tag_value)
+            if decoder:
+                decoder = partial(decoder, self)
+            else:
+                decoder_name = default_tag_decoders.get(tag_value)
+                if decoder_name is None:
+                    return CBORTag(tag_value, self.decode_item())
+                decoder = getattr(self, decoder_name)
+            self._tag_decoders[tag_value] = decoder
+        return decoder()
 
     def decode_simple(self, first_byte):
         value = first_byte & 0x1f

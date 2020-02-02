@@ -321,10 +321,27 @@ def test_invalid_regexp():
         loads(bytes.fromhex(encoding))
 
 
+def test_unknown_tag():
+    encoding = 'd9032063746167'  # Unknown tag 800 with payload text string "tag"
+    value = loads(bytes.fromhex(encoding))
+    assert value == CBORTag(800, 'tag')
+
+
 def test_decode_set():
     encoding = 'd90102 80'
     # assert it's a set not a frozenset
     assert isinstance(loads(bytes.fromhex(encoding)), set)
+
+
+def test_custom_tag_decoder():
+    def tag_800_handler(decoder):
+        assert isinstance(decoder, CBORDecoder)
+        return decoder.decode_item()[-1]
+
+    # dumps([CBORTag(800, 'tag'), CBORTag(800, 'tab')]).hex()
+    encoding = '82d9032063746167d9032063746162'
+    value = loads(bytes.fromhex(encoding), tag_decoders = {800: tag_800_handler})
+    assert value == ['g', 'b']
 
 
 def test_ordered_flag():
