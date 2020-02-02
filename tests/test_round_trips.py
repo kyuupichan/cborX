@@ -83,6 +83,8 @@ from cborx import *
     IPv6Network('2001:db8:85a3:0:0:8a2e::/96', strict=False),
     OrderedDict([('b', 1), ('a', 3)]),
     {FrozenOrderedDict([('b', 1), ('c', 2), ('a', 5)]): None},
+    BigFloat(123, -16),
+    BigFloat(12345678901234567890123456789012345678901234567890123456789012345678901234567, -256),
 ))
 def test_round_trip(value):
     encoding = dumps(value)

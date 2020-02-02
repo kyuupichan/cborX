@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from io import BytesIO
 import math
 import re
 
@@ -294,6 +295,7 @@ def test_truncated(encoding):
     ('d9010443c00a0a', 'invalid IP address'),
     ('d9010500',' IP network must be encoded as a single-entry map'),
     ('d90105a144c0a80064420102', 'invalid IP network'),
+    ('d9011080', 'ordered map tag enclosed a non-map'),
     ('d81d60', 'invalid shared reference'),
     ('d81d80', 'invalid shared reference'),
     ('d81d05', 'invalid shared reference'),
@@ -435,3 +437,8 @@ def test_invalid_simple(encoding):
 @pytest.mark.parametrize("cls", [bytearray, memoryview])
 def test_loads_special(cls):
     assert loads(cls(bytes.fromhex('6449455446'))) == 'IETF'
+
+
+def test_load():
+    value = BytesIO(bytes.fromhex('6449455446'))
+    assert load(value) == 'IETF'

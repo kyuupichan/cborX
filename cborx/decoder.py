@@ -43,7 +43,7 @@ from cborx.packing import (
     unpack_be_float2, unpack_be_float4, unpack_be_float8,
 )
 from cborx.types import (
-    CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag
+    CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigFloat
 )
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin
 
@@ -277,7 +277,7 @@ class CBORDecoder:
 
     def decode_bigfloat(self, _flags):
         exponent, mantissa = self._decode_exponent_mantissa('bigfloat')
-        return Decimal(mantissa) * (2 ** exponent)
+        return BigFloat(mantissa, exponent)
 
     def decode_rational(self, flags):
         parts = self.decode_item(flags)
@@ -330,7 +330,7 @@ class CBORDecoder:
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
         result = self.decode_item(flags | CBORFlags.ORDERED)
         if not isinstance(result, Mapping):
-            raise CBORDecodingError('ordered map tag did not contain a map')
+            raise CBORDecodingError('ordered map tag enclosed a non-map')
         return result
 
     def decode_shared(self, flags):
