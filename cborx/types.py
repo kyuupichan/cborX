@@ -188,6 +188,32 @@ class BigFloat:
         return Decimal(self.mantissa) * (Decimal(2) ** self.exponent)
 
 
+@attr.s(slots=True, frozen=True)
+class BigNum:
+    '''Represents a bignum integer in the CBOR sense.
+
+    A generic decoder must be able to distinguish a bignum from an integer of major type 0
+    or 1.  The decoder by default will decode a bignum (tag 2 or 3) as am integer, but an
+    option will force it to return it as a BigNum instance.
+
+    The encoder, by default, will encode a BigNum as a CBOR BigNum even if it could be
+    encoded as a major type 0 or 1 integer; an option can force it to encode it as a major
+    type 0 or 1 integer if possible.
+
+    At present a BigNum can only be compared to other BigNums; in particular it does not
+    equal its integer value.
+    '''
+    value = attr.ib()
+
+    @value.validator
+    def _validate_value(self, attribute, value):
+        if not isinstance(value, int):
+            raise TypeError(f'bignum value {value} must be an integer')
+
+    def __encode_cbor__(self, encoder):
+        return encoder.encode_bignum(self.value)
+
+
 class FrozenDict(Mapping):
     '''A frozen (immutable) dictionary'''
 

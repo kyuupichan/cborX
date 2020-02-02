@@ -44,15 +44,17 @@ from cborx.packing import (
     unpack_be_float2, unpack_be_float4, unpack_be_float8,
 )
 from cborx.types import (
-    CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigFloat
+    CBOREOFError, CBORDecodingError, FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag,
+    BigNum, BigFloat
 )
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin
 
 
-# Flags affecting the decoder
 class DecoderFlags:
+    '''Flags affecting CBORDecoder'''
     IMMUTABLE = 1
     ORDERED = 2
+    RETAIN_BIGNUMS = 4
 
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
@@ -79,7 +81,7 @@ tag_decoders = {
 class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
-    def __init__(self, read):
+    def __init__(self, read, retain_bignums=False):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -95,6 +97,8 @@ class CBORDecoder:
         self._shared_id = itertools.count()
         self._shared_ids = {}
         self._flags = 0
+        if retain_bignums:
+            self._flags |= DecoderFlags.RETAIN_BIGNUMS
 
     @contextmanager
     def flags_set(self, mask):
@@ -255,20 +259,29 @@ class CBORDecoder:
             raise CBORDecodingError(f'invalid date and time text: {text}')
 
     def decode_timestamp(self):
-        timestamp = self.decode_item()
-        # NOTE: this admits bignums which should perhaps be disallowed
+        # Bignums are invalid as timestamps
+        with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
+            timestamp = self.decode_item()
         if not isinstance(timestamp, (int, float)):
-            raise CBORDecodingError('tagged timestamp is not an integer or float')
+            raise CBORDecodingError('tagged timestamp is not a plain integer or float')
         return datetime.fromtimestamp(timestamp, timezone.utc)
 
-    def decode_unsigned_bignum(self):
+    def _decode_bignum(self, is_negative):
         bignum_encoding = self.decode_item()
         if not isinstance(bignum_encoding, bytes):
             raise CBORDecodingError('bignum payload must be a byte string')
-        return int.from_bytes(bignum_encoding, byteorder='big')
+        value = int.from_bytes(bignum_encoding, byteorder='big')
+        if is_negative:
+            value = -1 - value
+        if self._flags & DecoderFlags.RETAIN_BIGNUMS:
+            return BigNum(value)
+        return value
+
+    def decode_unsigned_bignum(self):
+        return self._decode_bignum(False)
 
     def decode_negative_bignum(self):
-        return -1 - self.decode_unsigned_bignum()
+        return self._decode_bignum(True)
 
     def _decode_exponent_mantissa(self, type_str):
         parts = self.decode_item()

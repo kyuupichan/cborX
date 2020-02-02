@@ -81,6 +81,24 @@ def test_Undefined():
     assert repr(Undefined) == 'Undefined'
 
 
+def test_BigNum():
+    a = BigNum(0)
+    b = BigNum(1)
+
+    assert a == a
+    assert a != b
+    assert a < b
+    assert b > a
+    assert a <= b
+    assert b >= a
+
+    assert a != 0
+    assert b != 1
+    with pytest.raises(TypeError):
+        a >= 0
+
+
+
 def test_BigFloat():
     a = BigFloat(2, 3)
     b = BigFloat(2, 3)

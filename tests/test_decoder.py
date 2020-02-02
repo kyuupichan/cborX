@@ -21,6 +21,7 @@ from cborx import *
     (1000000000000, '1b000000e8d4a51000'),
     (18446744073709551615, '1bffffffffffffffff'),
     (-18446744073709551616, '3bffffffffffffffff'),
+    (18446744073709551616, 'c249010000000000000000'),
     (-1, '20'),
     (-10, '29'),
     (-100, '3863'),
@@ -276,8 +277,10 @@ def test_truncated(encoding):
 @pytest.mark.parametrize("encoding, match", [
     ('c000', 'date and time is not text'),
     ('c06161', 'invalid date and time text'),
-    ('c140', 'timestamp is not an integer or float'),
-    ('c160', 'timestamp is not an integer or float'),
+    ('c140', 'timestamp is not a plain integer or float'),
+    ('c160', 'timestamp is not a plain integer or float'),
+    # Bignum not permitted as timestamp
+    ('c1c249010000000000000000', 'timestamp is not a plain integer or float'),
     ('c200', 'bignum payload must be a byte string'),
     ('c300', 'bignum payload must be a byte string'),
     ('c48102', 'decimal must be encoded'),
