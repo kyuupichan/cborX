@@ -204,6 +204,25 @@ def test_bad_il_text_string(encoding):
         loads(bytes.fromhex(encoding))
 
 
+@pytest.mark.parametrize("encoding, match", [
+    ('a201020102', '1 duplicate key: 1'),   # { 1:2, 1:2}
+    ('a501020203020406020102', '2 duplicate keys: '),   # { 1:2, 2:3, 2: 4, 6: 2, 1: 2}
+    ('bf6161010000616102ff', " duplicate key: 'a'"),   # {_ 'a': 1, 0:0, 'a': 2 }
+])
+def test_duplicate_keys(encoding, match):
+    with pytest.raises(DuplicateKeyError, match=match):
+        loads(bytes.fromhex(encoding))
+
+
+def test_duplicate_keys_int_vs_bignum():
+    '''Test we get a DuplicateKeyError if and only if we collapse bignums.'''
+    # dumps({BigNum(0): 0, 0:0}).hex()
+    encoding = 'a20000c24000'
+    assert loads(bytes.fromhex(encoding), retain_bignums=True) == {BigNum(0): 0, 0:0}
+    with pytest.raises(DuplicateKeyError):
+        loads(bytes.fromhex(encoding), retain_bignums=False)
+
+
 @pytest.mark.parametrize("encoding", [
     '5f01ff',      # _ 1
     '5f616101ff',  # _ 'a' 1

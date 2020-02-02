@@ -143,7 +143,7 @@ class CBORDecoder:
             length, = uint_unpackers[kind](self.read(1 << kind))
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
-            return None
+            return -1
         raise BadInitialByteError(f'bad initial byte 0x{first_byte:x}')
 
     def decode_unsigned_int(self, first_byte):
@@ -165,7 +165,7 @@ class CBORDecoder:
 
     def decode_byte_string(self, first_byte):
         length = self.decode_length(first_byte)
-        if length is None:
+        if length == -1:
             return bjoin(self._byte_string_parts())
         return self.read(length)
 
@@ -182,7 +182,7 @@ class CBORDecoder:
 
     def decode_text_string(self, first_byte):
         length = self.decode_length(first_byte)
-        if length is None:
+        if length == -1:
             return sjoin(self._text_string_parts())
         utf8_bytes = self.read(length)
         try:
@@ -202,30 +202,25 @@ class CBORDecoder:
     def decode_list(self, first_byte):
         length = self.decode_length(first_byte)
         cls = tuple if self._flags & DecoderFlags.IMMUTABLE else self._build_mutable(list)
-        if length is None:
+        if length == -1:
             return cls(self._list_parts())
         decode_item = self.decode_item
         return cls(decode_item() for _ in range(length))
 
-    def _pairs_until_break(self):
+    def _key_value_pairs(self, keys, length):
         read = self.read
         major_decoders = self._major_decoders
-        while True:
+        keys_append = keys.append
+        decode_item = self.decode_item
+        while length:
             first_byte = ord(read(1))
-            if first_byte == 0xff:
+            if first_byte == 0xff and length < 0:
                 break
             with self.flags_set(DecoderFlags.IMMUTABLE):
                 key = major_decoders[first_byte >> 5](first_byte)
-            first_byte = ord(read(1))
-            value = major_decoders[first_byte >> 5](first_byte)
-            yield key, value
-
-    def _pairs_of_length(self, length):
-        decode_item = self.decode_item
-        for _ in range(length):
-            with self.flags_set(DecoderFlags.IMMUTABLE):
-                key = decode_item()
+            keys_append(key)
             yield key, decode_item()
+            length -= 1
 
     def decode_dict(self, first_byte):
         length = self.decode_length(first_byte)
@@ -235,9 +230,16 @@ class CBORDecoder:
             self._flags &= ~DecoderFlags.ORDERED
         else:
             cls = FrozenDict if self._flags & DecoderFlags.IMMUTABLE else self._build_mutable(dict)
-        if length is None:
-            return cls(self._pairs_until_break())
-        return cls(self._pairs_of_length(length))
+
+        keys = []
+        value = cls(self._key_value_pairs(keys, length))
+        if len(value) != len(keys):
+            seen = set()
+            dups = [key for key in keys if key in seen or seen.add(key)]
+            dups_str = ''.join(f'{key!r}' for key in dups)
+            raise DuplicateKeyError(f'map has {len(dups):,d} duplicate keys: {dups_str}')
+
+        return value
 
     def decode_tag(self, first_byte):
         tag_value = self.decode_length(first_byte)
