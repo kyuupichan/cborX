@@ -205,7 +205,7 @@ class CBOREncoder:
                                                               CBORSortMethod.UNSORTED)
 
     def encode_set(self, value):
-        return self.encode_tag(258) + self.encode_sorted_list(tuple(value))
+        return self.encode_tag(258) + self.encode_sorted_list(value)
 
     def encode_bool(self, value):
         return b'\xf5' if value else b'\xf4'
