@@ -42,7 +42,7 @@ from uuid import UUID
 
 from cborx.packing import (
     unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64,
-    unpack_be_float2, unpack_be_float4, unpack_be_float8,
+    unpack_be_float2, unpack_be_float4, unpack_be_float8, pack_cbor_short_float,
 )
 from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
@@ -284,8 +284,12 @@ class CBORDecoder:
                 raise BadSimpleError(f'simple value 0x{value:x} encoded with extra byte')
             return self._simple_value(value)
         if value < 28:
-            value, = be_float_unpackers[value - 25](self.read(1 << (value - 24)))
-            return value
+            length = 1 << (value - 24)
+            float_value, = be_float_unpackers[value - 25](self.read(length))
+            if value > 25 and self._deterministic & DeterministicFlags.FLOAT:
+                if length != len(pack_cbor_short_float(float_value)) - 1:
+                    raise DeterministicError(f'float {float_value} is not minimally encoded')
+            return float_value
         if value == 31:
             raise MisplacedBreakError('break stop code outside indefinite-length object')
         raise BadInitialByteError(f'bad initial byte 0x{first_byte:x}')

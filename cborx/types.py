@@ -32,8 +32,8 @@ from decimal import Decimal
 
 import attr
 
-from cborx.packing import pack_byte
-from cborx.util import bjoin, sjoin, encode_length
+from cborx.packing import pack_byte, pack_cbor_length
+from cborx.util import bjoin, sjoin
 
 __all__ = (
     'Undefined', 'CBORSimple', 'CBORTag',
@@ -143,7 +143,7 @@ class CBORTag:
             raise ValueError(f'tag {value} out of range')
 
     def __encode_cbor__(self, encoder):
-        return encode_length(self.tag, 0xc0) + encoder.encode_item(self.value)
+        return pack_cbor_length(self.tag, 0xc0) + encoder.encode_item(self.value)
 
 
 class CBORUndefined:

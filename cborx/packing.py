@@ -78,3 +78,46 @@ unpack_be_float4 = struct_be_f.unpack
 unpack_be_float8 = struct_be_d.unpack
 
 hex_to_bytes = bytes.fromhex
+
+
+def pack_cbor_length(length, major):
+    '''Return the CBOR encoding of a length for the given (shifted) major value.'''
+    if length < 24:
+        return pack_byte(major + length)
+    if length < 256:
+        return pack_byte(major + 24) + pack_byte(length)
+    if length < 65536:
+        return pack_byte(major + 25) + pack_be_uint16(length)
+    if length < 4294967296:
+        return pack_byte(major + 26) + pack_be_uint32(length)
+    if length < 18446744073709551616:
+        return pack_byte(major + 27) + pack_be_uint64(length)
+    raise OverflowError
+
+
+def pack_cbor_double(value):
+    '''Encoding of a float as an IEEE double-precision payload.'''
+    return b'\xfb' + pack_be_float8(value)
+
+
+def pack_cbor_short_float(value):
+    '''Shortest encoding of a float that does not lose precision.'''
+    if value == value:
+        try:
+            pack4 = pack_be_float4(value)
+            value4, = unpack_be_float4(pack4)
+            if value4 != value:
+                raise OverflowError
+        except OverflowError:
+            return pack_cbor_double(value)
+        else:
+            try:
+                pack2 = pack_be_float2(value)
+                value2, = unpack_be_float2(pack2)
+                if value2 != value:
+                    raise OverflowError
+                return b'\xf9' + pack2
+            except OverflowError:
+                return b'\xfa' + pack4
+    else:
+        return b'\xf9\x7e\x00'

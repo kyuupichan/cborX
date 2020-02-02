@@ -37,11 +37,9 @@ from functools import partial
 from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 
-from cborx.packing import (
-    pack_be_float2, pack_be_float4, pack_be_float8, unpack_be_float2, unpack_be_float4
-)
+from cborx.packing import pack_cbor_length, pack_cbor_short_float, pack_cbor_double
 from cborx.types import FrozenDict, FrozenOrderedDict, EncodingError
-from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map, encode_length
+from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map
 
 
 __all__ = (
@@ -157,9 +155,9 @@ class CBOREncoder:
         '''
         try:
             if value >= 0:
-                return encode_length(value, 0x00)
+                return pack_cbor_length(value, 0x00)
             else:
-                return encode_length(-1 - value, 0x20)
+                return pack_cbor_length(-1 - value, 0x20)
         except OverflowError:
             pass
         if permit_bignum:
@@ -174,21 +172,21 @@ class CBOREncoder:
             return b'\xc3' + self.encode_byte_string(uint_to_be_bytes(-1 - value))
 
     def encode_byte_string(self, value):
-        return encode_length(len(value), 0x40) + value
+        return pack_cbor_length(len(value), 0x40) + value
 
     def encode_text_string(self, value):
         value_utf8 = value.encode()
-        return encode_length(len(value_utf8), 0x60) + value_utf8
+        return pack_cbor_length(len(value_utf8), 0x60) + value_utf8
 
     def _make_list(self, length, encoded_items_gen):
-        return encode_length(length, 0x80) + bjoin(encoded_items_gen)
+        return pack_cbor_length(length, 0x80) + bjoin(encoded_items_gen)
 
     def encode_ordered_list(self, value):
         encode_item = self.encode_item
         return self._make_list(len(value), (encode_item(item) for item in value))
 
     def encode_sorted_list(self, value):
-        length = encode_length(len(value), 0x80)
+        length = pack_cbor_length(len(value), 0x80)
         encode_item = self.encode_item
         encoded_items_gen = (encode_item(item) for item in value)
         return length + bjoin(sorted_items(encoded_items_gen, self.sort_method))
@@ -196,7 +194,7 @@ class CBOREncoder:
     def encode_sorted_dict(self, kv_pairs, sort_method):
         encode_item = self.encode_item
         pairs_gen = ((encode_item(key), value) for key, value in kv_pairs)
-        length = encode_length(len(kv_pairs), 0xa0)
+        length = pack_cbor_length(len(kv_pairs), 0xa0)
         return length + bjoin(encoded_key + encode_item(value)
                               for encoded_key, value in sorted_pairs(pairs_gen, sort_method))
 
@@ -220,36 +218,12 @@ class CBOREncoder:
     def encode_float(self, value):
         '''Encodes special values as 2-byte floats, and finite numbers in minimal encoding.'''
         if self.float_style == CBORFloatStyle.SHORTEST:
-            return self.encode_shortest_float(value)
+            return pack_cbor_short_float(value)
         else:
-            return self.encode_double_float(value)
-
-    def encode_double_float(self, value):
-        return b'\xfb' + pack_be_float8(value)
-
-    def encode_shortest_float(self, value):
-        if value == value:
-            try:
-                pack4 = pack_be_float4(value)
-                value4, = unpack_be_float4(pack4)
-                if value4 != value:
-                    raise OverflowError
-            except OverflowError:
-                return b'\xfb' + pack_be_float8(value)
-            else:
-                try:
-                    pack2 = pack_be_float2(value)
-                    value2, = unpack_be_float2(pack2)
-                    if value2 != value:
-                        raise OverflowError
-                    return b'\xf9' + pack2
-                except OverflowError:
-                    return b'\xfa' + pack4
-        else:
-            return b'\xf9\x7e\x00'
+            return pack_cbor_double(value)
 
     def encode_tag(self, value):
-        return encode_length(value, 0xc0)
+        return pack_cbor_length(value, 0xc0)
 
     def encode_datetime(self, value):
         if not value.tzinfo:
