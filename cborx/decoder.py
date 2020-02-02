@@ -283,20 +283,27 @@ class CBORDecoder:
     def decode_negative_bignum(self):
         return self._decode_bignum(True)
 
-    def _decode_exponent_mantissa(self, type_str):
-        parts = self.decode_item()
-        # FIXME: should require the exponent cannot be a bignum
-        if (not isinstance(parts, Sequence) or
-                len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
-            raise CBORDecodingError(f'a {type_str} must be encoded as a 2-integer list')
-        return parts
+    def _decode_mantissa_exponent(self, type_str):
+        # Retain bignums to catch invalid exponent encodings
+        with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
+            parts = self.decode_item()
+        if not isinstance(parts, Sequence) or len(parts) != 2:
+            raise CBORDecodingError(f'{type_str} must be encoded as a list [exponent, mantissa]')
+        exponent, mantissa = parts
+        if not isinstance(exponent, int):  # Note: exponent bignum is invalid
+            raise CBORDecodingError(f'{type_str} has an invalid exponent {exponent}')
+        if isinstance(mantissa, BigNum):
+            mantissa = mantissa.value
+        elif not isinstance(mantissa, int):
+            raise CBORDecodingError(f'{type_str} has an invalid mantissa {mantissa}')
+        return mantissa, exponent
 
     def decode_decimal(self):
-        exponent, mantissa = self._decode_exponent_mantissa('decimal')
+        mantissa, exponent = self._decode_mantissa_exponent('decimal')
         return Decimal(mantissa).scaleb(exponent)
 
     def decode_bigfloat(self):
-        exponent, mantissa = self._decode_exponent_mantissa('bigfloat')
+        mantissa, exponent = self._decode_mantissa_exponent('bigfloat')
         return BigFloat(mantissa, exponent)
 
     def decode_rational(self):
