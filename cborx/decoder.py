@@ -53,7 +53,7 @@ from cborx.types import (
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
 
 
-__all__ = ('load', 'loads', 'CBORDecoder',)
+__all__ = ('load', 'loads', 'CBORDecoder', 'DeterministicFlags')
 
 
 class DecoderFlags(IntEnum):
@@ -63,7 +63,17 @@ class DecoderFlags(IntEnum):
     RETAIN_BIGNUMS = 4
 
 
+class DeterministicFlags(IntEnum):
+    NONE       = 0x00
+    LENGTH     = 0x01
+    FLOAT      = 0x02
+    REALIZE_IL = 0x04
+    SORTING    = 0x08
+    ALL        = 0xff
+
+
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
+uint_minima = [24, 1 << 8, 1 << 16, 1 << 32]
 be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
 default_tag_decoders = {
     0: 'decode_datetime_text',
@@ -89,7 +99,7 @@ class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
     def __init__(self, read, retain_bignums=False, tag_decoders=None, simple_value=None,
-                 check_eof=True):
+                 check_eof=True, deterministic=DeterministicFlags.NONE):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -111,6 +121,7 @@ class CBORDecoder:
         self._tag_decoders = {}
         self._simple_value = simple_value or CBORSimple
         self._check_eof = check_eof
+        self._deterministic = deterministic
 
     @contextmanager
     def flags_set(self, mask):
@@ -141,6 +152,13 @@ class CBORDecoder:
         if minor < 28:
             kind = minor - 24
             length, = uint_unpackers[kind](self.read(1 << kind))
+            if self._deterministic & DeterministicFlags.LENGTH and length < uint_minima[kind]:
+                if first_byte < 0x20:
+                    raise DeterministicError(f'value {length:,d} is not minimally encoded')
+                elif first_byte < 0x40:
+                    raise DeterministicError(f'value {-1 - length:,d} is not minimally encoded')
+                else:
+                    raise DeterministicError(f'length {length:,d} is not minimally encoded')
             return length
         if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
             return -1

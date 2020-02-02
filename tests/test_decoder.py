@@ -205,9 +205,9 @@ def test_bad_il_text_string(encoding):
 
 
 @pytest.mark.parametrize("encoding, match", [
-    ('a201020102', '1 duplicate key: 1'),   # { 1:2, 1:2}
+    ('a201020102', '1 duplicate keys: 1'),   # { 1:2, 1:2}
     ('a501020203020406020102', '2 duplicate keys: '),   # { 1:2, 2:3, 2: 4, 6: 2, 1: 2}
-    ('bf6161010000616102ff', " duplicate key: 'a'"),   # {_ 'a': 1, 0:0, 'a': 2 }
+    ('bf6161010000616102ff', " duplicate keys: 'a'"),   # {_ 'a': 1, 0:0, 'a': 2 }
 ])
 def test_duplicate_keys(encoding, match):
     with pytest.raises(DuplicateKeyError, match=match):
@@ -519,6 +519,55 @@ def my_simple_value(value):
 def test_simple_value(value, result):
     encoding = dumps(CBORSimple(value))
     assert loads(encoding, simple_value=my_simple_value) == result
+
+
+@pytest.mark.parametrize("encoding, deterministic, match", [
+    ('1817', DeterministicFlags.LENGTH, 'value 23 is not minimally encoded'),
+    ('3817', DeterministicFlags.LENGTH, 'value -24 is not minimally encoded'),
+    ('5817', DeterministicFlags.LENGTH, 'length 23 is not minimally encoded'),
+    ('7817', DeterministicFlags.LENGTH, 'length 23 is not minimally encoded'),
+    ('9817', DeterministicFlags.LENGTH, 'length 23 is not minimally encoded'),
+    ('b817', DeterministicFlags.LENGTH, 'length 23 is not minimally encoded'),
+    ('d817', DeterministicFlags.LENGTH, 'length 23 is not minimally encoded'),
+    ('1a0000ffff', DeterministicFlags.LENGTH, 'value 65,535 is not minimally encoded'),
+    ('3a0000ffff', DeterministicFlags.LENGTH, 'value -65,536 is not minimally encoded'),
+    ('5a0000ffff', DeterministicFlags.LENGTH, 'length 65,535 is not minimally encoded'),
+    ('7a0000ffff', DeterministicFlags.LENGTH, 'length 65,535 is not minimally encoded'),
+    ('9a0000ffff', DeterministicFlags.LENGTH, 'length 65,535 is not minimally encoded'),
+    ('ba0000ffff', DeterministicFlags.LENGTH, 'length 65,535 is not minimally encoded'),
+    ('da0000ffff', DeterministicFlags.LENGTH, 'length 65,535 is not minimally encoded'),
+    ('1b00000000ffffffff', DeterministicFlags.LENGTH,
+     'value 4,294,967,295 is not minimally encoded'),
+    ('3b00000000ffffffff', DeterministicFlags.LENGTH,
+     'value -4,294,967,296 is not minimally encoded'),
+    ('5b0000000000000000', DeterministicFlags.LENGTH,
+     'length 0 is not minimally encoded'),
+    ('7b0000000000000000', DeterministicFlags.LENGTH,
+     'length 0 is not minimally encoded'),
+    ('9b0000000000000000', DeterministicFlags.LENGTH,
+     'length 0 is not minimally encoded'),
+    ('bb0000000000000000', DeterministicFlags.LENGTH,
+     'length 0 is not minimally encoded'),
+    ('db0000000000000000', DeterministicFlags.LENGTH,
+     'length 0 is not minimally encoded'),
+])
+def test_non_deterministic(encoding, deterministic, match):
+    with pytest.raises(DeterministicError, match=match):
+        loads(bytes.fromhex(encoding), deterministic=deterministic)
+
+@pytest.mark.parametrize("encoding, bad", [
+    # This must raise a BadSimpleError as that is ill-formed, not just invalid
+    ('f817', True),
+    # These are floats
+    ('fa0000ffff', False),
+    ('fb0000000000000000', False),
+])
+def test_non_deterministic_simples(encoding, bad):
+    if bad:
+        with pytest.raises(BadSimpleError):
+            loads(bytes.fromhex(encoding), deterministic=DeterministicFlags.LENGTH)
+    else:
+        loads(bytes.fromhex(encoding), deterministic=DeterministicFlags.LENGTH)
 
 
 def test_check_eof_false():
