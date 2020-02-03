@@ -64,6 +64,7 @@ class DecoderFlags(IntEnum):
 
 
 class DeterministicFlags(IntEnum):
+    '''Flags indicating what non-deterministic encodings to detect.'''
     NONE       = 0x00
     LENGTH     = 0x01
     FLOAT      = 0x02
@@ -98,7 +99,7 @@ default_tag_decoders.update({tag: 'decode_array' for tag in tag_to_typecode_map}
 class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
-    def __init__(self, read, retain_bignums=False, tag_decoders=None, simple_value=None,
+    def __init__(self, read, *, retain_bignums=False, tag_decoders=None, simple_value=None,
                  check_eof=True, deterministic=DeterministicFlags.NONE):
         self._read = read
         self._major_decoders = (
@@ -145,44 +146,44 @@ class CBORDecoder:
             return obj
         return build
 
-    def decode_length(self, first_byte):
-        minor = first_byte & 0x1f
+    def decode_length(self, initial_byte):
+        minor = initial_byte & 0x1f
         if minor < 24:
             return minor
         if minor < 28:
             kind = minor - 24
             length, = uint_unpackers[kind](self.read(1 << kind))
             if self._deterministic & DeterministicFlags.LENGTH and length < uint_minima[kind]:
-                if first_byte < 0x20:
+                if initial_byte < 0x20:
                     raise DeterministicError(f'value {length:,d} is not minimally encoded')
-                elif first_byte < 0x40:
+                elif initial_byte < 0x40:
                     raise DeterministicError(f'value {-1 - length:,d} is not minimally encoded')
                 else:
                     raise DeterministicError(f'length {length:,d} is not minimally encoded')
             return length
-        if first_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
+        if initial_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
             return -1
-        raise BadInitialByteError(f'bad initial byte 0x{first_byte:x}')
+        raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
 
-    def decode_unsigned_int(self, first_byte):
-        return self.decode_length(first_byte)
+    def decode_unsigned_int(self, initial_byte):
+        return self.decode_length(initial_byte)
 
-    def decode_negative_int(self, first_byte):
-        return -1 - self.decode_length(first_byte)
+    def decode_negative_int(self, initial_byte):
+        return -1 - self.decode_length(initial_byte)
 
     def _byte_string_parts(self):
         while True:
-            first_byte = ord(self.read(1))
-            if 0x40 <= first_byte < 0x5c:
-                yield self.decode_byte_string(first_byte)
-            elif first_byte == 0xff:
+            initial_byte = ord(self.read(1))
+            if 0x40 <= initial_byte < 0x5c:
+                yield self.decode_byte_string(initial_byte)
+            elif initial_byte == 0xff:
                 break
             else:
-                raise BadInitialByteError(f'bad initial byte 0x{first_byte:x} in '
+                raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x} in '
                                           f'indefinite-length byte string')
 
-    def decode_byte_string(self, first_byte):
-        length = self.decode_length(first_byte)
+    def decode_byte_string(self, initial_byte):
+        length = self.decode_length(initial_byte)
         if length == -1:
             if self._deterministic & DeterministicFlags.REALIZE_IL:
                 raise DeterministicError(f'indeterminate-length byte string')
@@ -191,17 +192,17 @@ class CBORDecoder:
 
     def _text_string_parts(self):
         while True:
-            first_byte = ord(self.read(1))
-            if 0x60 <= first_byte < 0x7c:
-                yield self.decode_text_string(first_byte)
-            elif first_byte == 0xff:
+            initial_byte = ord(self.read(1))
+            if 0x60 <= initial_byte < 0x7c:
+                yield self.decode_text_string(initial_byte)
+            elif initial_byte == 0xff:
                 break
             else:
-                raise BadInitialByteError(f'bad initial byte 0x{first_byte:x} in '
+                raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x} in '
                                           f'indefinite-length text string')
 
-    def decode_text_string(self, first_byte):
-        length = self.decode_length(first_byte)
+    def decode_text_string(self, initial_byte):
+        length = self.decode_length(initial_byte)
         if length == -1:
             if self._deterministic & DeterministicFlags.REALIZE_IL:
                 raise DeterministicError(f'indeterminate-length text string')
@@ -214,15 +215,15 @@ class CBORDecoder:
 
     def _list_parts(self):
         read = self.read
-        major_decoders = self._major_decoders
+        decode_item = self.decode_item
         while True:
-            first_byte = ord(read(1))
-            if first_byte == 0xff:
+            initial_byte = ord(read(1))
+            if initial_byte == 0xff:
                 break
-            yield major_decoders[first_byte >> 5](first_byte)
+            yield decode_item(initial_byte)
 
-    def decode_list(self, first_byte):
-        length = self.decode_length(first_byte)
+    def decode_list(self, initial_byte):
+        length = self.decode_length(initial_byte)
         cls = tuple if self._flags & DecoderFlags.IMMUTABLE else self._build_mutable(list)
         if length == -1:
             if self._deterministic & DeterministicFlags.REALIZE_IL:
@@ -233,21 +234,20 @@ class CBORDecoder:
 
     def _key_value_pairs(self, keys, length):
         read = self.read
-        major_decoders = self._major_decoders
         keys_append = keys.append
         decode_item = self.decode_item
         while length:
-            first_byte = ord(read(1))
-            if first_byte == 0xff and length < 0:
+            initial_byte = ord(read(1))
+            if initial_byte == 0xff and length < 0:
                 break
             with self.flags_set(DecoderFlags.IMMUTABLE):
-                key = major_decoders[first_byte >> 5](first_byte)
+                key = decode_item(initial_byte)
             keys_append(key)
             yield key, decode_item()
             length -= 1
 
-    def decode_dict(self, first_byte):
-        length = self.decode_length(first_byte)
+    def decode_dict(self, initial_byte):
+        length = self.decode_length(initial_byte)
         if length == -1 and self._deterministic & DeterministicFlags.REALIZE_IL:
             raise DeterministicError(f'indeterminate-length map')
 
@@ -268,8 +268,8 @@ class CBORDecoder:
 
         return value
 
-    def decode_tag(self, first_byte):
-        tag_value = self.decode_length(first_byte)
+    def decode_tag(self, initial_byte):
+        tag_value = self.decode_length(initial_byte)
         decoder = self._tag_decoders.get(tag_value)  # Cache
         if not decoder:
             decoder = self._custom_tag_decoders.get(tag_value)
@@ -281,8 +281,8 @@ class CBORDecoder:
             self._tag_decoders[tag_value] = decoder
         return decoder(self, tag_value)
 
-    def decode_simple(self, first_byte):
-        value = first_byte & 0x1f
+    def decode_simple(self, initial_byte):
+        value = initial_byte & 0x1f
         if value < 20:
             return self._simple_value(value)
         if value < 24:
@@ -301,7 +301,7 @@ class CBORDecoder:
             return float_value
         if value == 31:
             raise MisplacedBreakError('break stop code outside indefinite-length object')
-        raise BadInitialByteError(f'bad initial byte 0x{first_byte:x}')
+        raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
 
     def decode_datetime_text(self, _tag_value):
         text = self.decode_item()
@@ -445,9 +445,10 @@ class CBORDecoder:
             return result
         raise UnexpectedEOFError(f'need {n:,d} bytes but only {len(result):,d} available')
 
-    def decode_item(self):
-        first_byte = ord(self.read(1))
-        return self._major_decoders[first_byte >> 5](first_byte)
+    def decode_item(self, initial_byte=None):
+        if initial_byte is None:
+            initial_byte = ord(self.read(1))
+        return self._major_decoders[initial_byte >> 5](initial_byte)
 
     def decode(self):
         result = self.decode_item()
@@ -457,21 +458,19 @@ class CBORDecoder:
         return result
 
 
-def loads(binary, **kwargs):
-    '''Deserialize a binary object (e.g. a bytes object, a bytearray object, a memoryview
-    object) containing a CBOR document to a Python object.
+def loads(raw, **kwargs):
+    '''Deserialize a raw binary (e.g. bytes) object containing a CBOR document to a Python
+    object.
 
     kwargs: arguments to pass to CBORDecoder
     '''
-    decoder = CBORDecoder(BytesIO(binary).read, **kwargs)
-    return decoder.decode()
+    return load(BytesIO(raw), **kwargs)
 
 
 def load(fp, **kwargs):
-    '''Deserialize fp (a .read() supporting file-like object containing a CBOR document) to a
-    Python object.
+    '''Deserialize from fp a CBOR document to a Python object.
 
+    fp: an object with a read() method, such as a file or socket
     kwargs: arguments to pass to CBORDecoder
     '''
-    decoder = CBORDecoder(fp.read, **kwargs)
-    return decoder.decode()
+    return CBORDecoder(fp.read, **kwargs).decode()
