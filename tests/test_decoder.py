@@ -557,6 +557,10 @@ def test_simple_value(value, result):
     ('fbfff0000000000000', DeterministicFlags.FLOAT, 'float -inf is not minimally encoded'),
     ('fa7fc00000', DeterministicFlags.FLOAT, 'float nan is not minimally encoded'),
     ('fb7ff8000000000000', DeterministicFlags.FLOAT, 'float nan is not minimally encoded'),
+    ('5fff', DeterministicFlags.REALIZE_IL, 'indeterminate-length byte string'),
+    ('7fff', DeterministicFlags.REALIZE_IL, 'indeterminate-length text string'),
+    ('9fff', DeterministicFlags.REALIZE_IL, 'indeterminate-length list'),
+    ('bfff', DeterministicFlags.REALIZE_IL, 'indeterminate-length map'),
 ])
 def test_non_deterministic(encoding, deterministic, match):
     with pytest.raises(DeterministicError, match=match):

@@ -184,6 +184,8 @@ class CBORDecoder:
     def decode_byte_string(self, first_byte):
         length = self.decode_length(first_byte)
         if length == -1:
+            if self._deterministic & DeterministicFlags.REALIZE_IL:
+                raise DeterministicError(f'indeterminate-length byte string')
             return bjoin(self._byte_string_parts())
         return self.read(length)
 
@@ -201,6 +203,8 @@ class CBORDecoder:
     def decode_text_string(self, first_byte):
         length = self.decode_length(first_byte)
         if length == -1:
+            if self._deterministic & DeterministicFlags.REALIZE_IL:
+                raise DeterministicError(f'indeterminate-length text string')
             return sjoin(self._text_string_parts())
         utf8_bytes = self.read(length)
         try:
@@ -221,6 +225,8 @@ class CBORDecoder:
         length = self.decode_length(first_byte)
         cls = tuple if self._flags & DecoderFlags.IMMUTABLE else self._build_mutable(list)
         if length == -1:
+            if self._deterministic & DeterministicFlags.REALIZE_IL:
+                raise DeterministicError(f'indeterminate-length list')
             return cls(self._list_parts())
         decode_item = self.decode_item
         return cls(decode_item() for _ in range(length))
@@ -242,6 +248,9 @@ class CBORDecoder:
 
     def decode_dict(self, first_byte):
         length = self.decode_length(first_byte)
+        if length == -1 and self._deterministic & DeterministicFlags.REALIZE_IL:
+            raise DeterministicError(f'indeterminate-length map')
+
         if self._flags & DecoderFlags.ORDERED:
             cls = (FrozenOrderedDict if self._flags & DecoderFlags.IMMUTABLE
                    else self._build_mutable(OrderedDict))
