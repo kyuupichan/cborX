@@ -598,3 +598,29 @@ def test_loads_special(cls):
 def test_load():
     value = BytesIO(bytes.fromhex('6449455446'))
     assert load(value) == 'IETF'
+
+
+@pytest.mark.parametrize("encoding, sequence", [
+    ('', []),
+    ('00', [0]),
+    ('0001', [0, 1]),
+    ('f4f5f6f7', [False, True, None, Undefined]),
+])
+def test_loads_sequence(encoding, sequence):
+    assert list(loads_sequence(bytes.fromhex(encoding))) == sequence
+
+
+def test_loads_sequence_truncated():
+    encoding = '005801'
+    gen = loads_sequence(bytes.fromhex(encoding))
+    assert next(gen) == 0
+    with pytest.raises(UnexpectedEOFError):
+        next(gen)
+
+
+def test_load_sequence():
+    encoding = '00810301'
+    gen = load_sequence(BytesIO(bytes.fromhex(encoding)))
+    assert next(gen) == 0
+    assert next(gen) == [3]
+    assert next(gen) == 1

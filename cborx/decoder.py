@@ -53,7 +53,8 @@ from cborx.types import (
 from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
 
 
-__all__ = ('load', 'loads', 'CBORDecoder', 'DeterministicFlags')
+__all__ = ('load', 'loads', 'load_sequence', 'loads_sequence',
+           'CBORDecoder', 'DeterministicFlags')
 
 
 class DecoderFlags(IntEnum):
@@ -457,6 +458,16 @@ class CBORDecoder:
 
         return result
 
+    def decode_sequence(self):
+        '''Decode a sequence of top-level CBOR items.  Acts as a generator yielding the values.'''
+        decode_item = self.decode_item
+        while True:
+            try:
+                initial_byte = ord(self.read(1))
+            except UnexpectedEOFError:
+                break
+            yield decode_item(initial_byte)
+
 
 def loads(raw, **kwargs):
     '''Deserialize a raw binary (e.g. bytes) object containing a CBOR document to a Python
@@ -474,3 +485,21 @@ def load(fp, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     return CBORDecoder(fp.read, **kwargs).decode()
+
+
+def loads_sequence(raw, **kwargs):
+    '''Yield a sequence of python objects from a binary (e.g. bytes) object containing a
+    sequence of contiguous CBOR documents.
+
+    kwargs: arguments to pass to CBORDecoder
+    '''
+    yield from load_sequence(BytesIO(raw), **kwargs)
+
+
+def load_sequence(fp, **kwargs):
+    '''Yield a sequence of python objects from fp containing a sequence of CBOR documents.
+
+    fp: an object with a read() method, such as a file or socket
+    kwargs: arguments to pass to CBORDecoder
+    '''
+    yield from CBORDecoder(fp.read, **kwargs).decode_sequence()
