@@ -281,7 +281,7 @@ class CBOREncoder:
         pairs = [(value.network_address.packed, value.prefixlen)]
         return self.encode_tag(261) + self.encode_sorted_dict(pairs, CBORSortMethod.UNSORTED)
 
-    def encode_array(self, value):
+    def encode_typed_array(self, value):
         tag = typecode_to_tag_map.get(value.typecode)
         if not tag:
             raise EncodingError(f'cannot encode arrays with typecode {value.typecode}')
@@ -317,7 +317,7 @@ default_encode_funcs = {
     FrozenDict: 'encode_dict',
     OrderedDict: 'encode_ordered_dict',
     FrozenOrderedDict: 'encode_ordered_dict',
-    array: 'encode_array',
+    array: 'encode_typed_array',
     datetime: 'encode_datetime',
     date: 'encode_date',
     Decimal: 'encode_decimal',

@@ -29,8 +29,6 @@ import re
 from array import array
 from datetime import datetime, date, timezone, time, timedelta
 
-from cborx.packing import pack_be_float4, pack_be_float8
-
 bjoin = b''.join
 sjoin = ''.join
 time_regex = re.compile(r'T(\d\d):(\d\d):(\d\d)(.\d+)?(Z|([+-])(\d\d):(\d\d))$')
@@ -68,19 +66,56 @@ def uint_to_be_bytes(value):
     return value.to_bytes((value.bit_length() + 7) // 8, 'big')
 
 
-def typecode_tag(typecode):
-    '''Convert array.array typecodes to tag values.'''
-    if typecode == 'f':
-        return 81 if array('f', [1]).tobytes() == pack_be_float4(1) else 85
-    if typecode == 'd':
-        return 82 if array('d', [1]).tobytes() == pack_be_float8(1) else 86
-    a = array(typecode, [1])
-    return (
-        63 + a.itemsize.bit_length() +
-        (4 if (a.tobytes()[0] == 1 and a.itemsize > 1) else 0) +
-        (8 if typecode.lower() == typecode else 0)
-    )
+def _analyze_array_tags(base_tag_value):
+    '''Determine dynamically for the host machine a map from Python typecodes to tag values,
+    and from tag values to decoder instructions.
+    '''
+    decoder_hints = {}
+    typecode_tag_values = {}
+
+    # Integer types
+
+    typecode_sizes = {typecode: array(typecode).itemsize for typecode in 'BHILQ'}
+    size_typecodes = {size: typecode for typecode, size in typecode_sizes.items()}
+    is_machine_int_le = array('I', [1]).tobytes()[0] == 1
+
+    for tag_value in range(16):
+        size = 1 << (tag_value & 3)
+        is_tag_le = bool(tag_value & 4)
+        if is_tag_le and size == 1:
+            continue     # LE bytes are redundant with BE bytes
+        typecode = size_typecodes.get(size)
+        if typecode:
+            if tag_value & 8:  # signed int
+                typecode = typecode.lower()
+            swap_bytes = (is_tag_le != is_machine_int_le) and size > 1
+            decoder_hints[base_tag_value + tag_value] = (typecode, swap_bytes)
+
+    for typecode, size in typecode_sizes.items():
+        unsigned_tag_value = (base_tag_value + (size.bit_length() - 1) +
+                              (4 if (is_machine_int_le and size > 1) else 0))
+        typecode_tag_values[typecode] = unsigned_tag_value
+        typecode_tag_values[typecode.lower()] = unsigned_tag_value + 8
+
+    # Floating point types
+
+    typecode_sizes = {typecode: array(typecode).itemsize for typecode in 'fd'}
+    size_typecodes = {size: typecode for typecode, size in typecode_sizes.items()}
+    is_machine_float_le = array('f', [-0.0]).tobytes()[0] == 0x00
+
+    for tag_value in range(16, 24):
+        size = 2 << (tag_value & 3)
+        typecode = size_typecodes.get(size)
+        if typecode:
+            is_tag_le = bool(tag_value & 4)
+            swap_bytes = is_tag_le != is_machine_float_le
+            decoder_hints[base_tag_value + tag_value] = (typecode, swap_bytes)
+
+    for typecode, size in typecode_sizes.items():
+        typecode_tag_values[typecode] = (base_tag_value + 16 + (size.bit_length() - 2) +
+                                         (4 if is_machine_float_le else 0))
+
+    return decoder_hints, typecode_tag_values
 
 
-typecode_to_tag_map = {typecode: typecode_tag(typecode) for typecode in 'bBhHiIlLqQfd'}
-tag_to_typecode_map = {value: key for key, value in typecode_to_tag_map.items()}
+typed_array_decoder_hints, typecode_to_tag_map = _analyze_array_tags(64)

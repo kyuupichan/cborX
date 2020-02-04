@@ -1,3 +1,4 @@
+from array import array
 from collections import OrderedDict
 from io import BytesIO
 import math
@@ -345,6 +346,65 @@ def test_tagged_value_error(encoding, match):
 def test_tagged_type_error(encoding, match):
     with pytest.raises(TagTypeError, match=match):
         loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding, expected", [
+    # uint8
+    ('d840430180fa', [1, 128, 250]),
+    # uint16 be
+    ('d8414400fa09c4', [250, 2500]),
+    # uint32 be
+    ('d8424800000fa0000186a0', [4000, 100000]),
+    # uint64 be
+    ('d843500000000000000fa00000010000000000', [4000, 1 << 40]),
+    # unit8 clamped
+    ('d8444200ff', CBORTag(68, bytes.fromhex('00ff'))),
+    # uint16 le
+    ('d84544fa00c409', [250, 2500]),
+    # uint32 le
+    ('d84648a00f0000a0860100', [4000, 100000]),
+    # uint64 le
+    ('d84750a00f0000000000000000000000010000', [4000, 1 << 40]),
+    # int8
+    ('d8484380ff05', [-128, -1, 5]),
+    # int16 be
+    ('d849468ad0ffff0005', [-30000, -1, 5]),
+    # int32 be
+    ('d84a4cfffe7960ffffffff00011170', [-100000, -1, 70000]),
+    # int64 be
+    ('d84b5818ffffff0000000000ffffffffffffffff0000000000000000', [-(1 << 40), -1, 1 >> 33]),
+    # reserved
+    ('d84c80', CBORTag(76, [])),
+    # int16 le
+    ('d84d46d08affff0500', [-30000, -1, 5]),
+    # int32 le
+    ('d84e4c6079feffffffffff70110100', [-100000, -1, 70000]),
+    # int64 le
+    ('d84f58180000000000ffffffffffffffffffffff0000000000000000', [-(1 << 40), -1, 1 >> 33]),
+    # float16 be
+    ('d850420000', CBORTag(80, bytes(2))),
+    # float32 be
+    ('d85148be75c28f455a1000', [-0.23999999463558197, 3489.0]),
+    # float64 be
+    ('d8525818bfceb851eb851eb83ff10000000000007ff0000000000000', [-0.24, 1.0625, math.inf]),
+    # float128be
+    ('d8535000000000000000000000000000000000', CBORTag(83, bytes(16))),
+    # float16 le
+    ('d854420000', CBORTag(84, bytes(2))),
+    # float32 le
+    ('d855488fc275be00105a45', [-0.23999999463558197, 3489.0]),
+    # float64 le
+    ('d8565818b81e85eb51b8cebf000000000000f13f000000000000f07f', [-0.24, 1.0625, math.inf]),
+    # float128le, CBORTag(80, b'00')),
+    ('d8575000000000000000000000000000000000', CBORTag(87, bytes(16))),
+])
+def test_typed_arrays(encoding, expected):
+    result = loads(bytes.fromhex(encoding))
+    if isinstance(expected, CBORTag):
+        assert result == expected
+    else:
+        assert isinstance(result, array)
+        assert list(result) == expected
 
 
 def test_invalid_regexp():

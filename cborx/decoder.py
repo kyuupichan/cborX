@@ -50,7 +50,9 @@ from cborx.types import (
     DeterministicError,
     FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat
 )
-from cborx.util import datetime_from_enhanced_RFC3339_text, bjoin, sjoin, tag_to_typecode_map
+from cborx.util import (
+    datetime_from_enhanced_RFC3339_text, bjoin, sjoin, typed_array_decoder_hints
+)
 
 
 __all__ = ('load', 'loads', 'load_sequence', 'loads_sequence',
@@ -94,7 +96,8 @@ default_tag_decoders = {
     261: 'decode_ip_network',
     272: 'decode_ordered_dict',
 }
-default_tag_decoders.update({tag: 'decode_array' for tag in tag_to_typecode_map})
+default_tag_decoders.update({tag_value: 'decode_typed_array' for tag_value
+                             in typed_array_decoder_hints})
 
 
 class CBORDecoder:
@@ -365,11 +368,15 @@ class CBORDecoder:
             raise TagValueError('rational has zero denominator')
         return Fraction(numerator, denominator)
 
-    def decode_array(self, tag_value):
+    def decode_typed_array(self, tag_value):
         array_bytes = self.decode_item()
         if not isinstance(array_bytes, bytes):
             raise TagTypeError('an array must be encoded as a byte string')
-        return array(tag_to_typecode_map[tag_value], array_bytes)
+        typecode, swap_bytes = typed_array_decoder_hints[tag_value]
+        result = array(typecode, array_bytes)
+        if swap_bytes:
+            result.byteswap()
+        return result
 
     def decode_regexp(self, _tag_value):
         pattern = self.decode_item()
