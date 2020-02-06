@@ -364,8 +364,8 @@ class CBORDecoder:
                 len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
             raise TagTypeError('a rational must be encoded as a 2-integer list')
         numerator, denominator = parts
-        if denominator == 0:
-            raise TagValueError('rational has zero denominator')
+        if denominator <= 0:
+            raise TagValueError(f'denominator of rational must be positive, not {denominator:,d}')
         return Fraction(numerator, denominator)
 
     def decode_typed_array(self, tag_value):

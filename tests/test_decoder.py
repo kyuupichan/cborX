@@ -299,7 +299,8 @@ def test_truncated(encoding):
     ('d81d05', 'non-existent shared reference'),
     ('d90102d81c81d81d00', 'non-existent shared reference'),
     ('d9010443c00a0a', 'invalid IP address'),
-    ('d81e820100', 'rational has zero denominator'),
+    ('d81e820100', 'denominator of rational must be positive, not 0'),
+    ('d81e82052a', 'denominator of rational must be positive, not -11'),
     ('d90105a24400000000000000', 'IP network must be encoded as a single-entry map'),
     ('d90105a1440000000020', 'invalid IP network'),
 ])

@@ -265,6 +265,7 @@ class CBOREncoder:
             return self.encode_float(float(value))
 
     def encode_rational(self, value):
+        assert value.denominator > 0
         return self.encode_tag(30) + self.encode_ordered_list((value.numerator, value.denominator))
 
     def encode_regexp(self, value):
