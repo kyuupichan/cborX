@@ -46,7 +46,7 @@ from cborx.packing import (
 )
 from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
-    UnconsumedDataError, TagTypeError, TagValueError, StringEncodingError, DuplicateKeyError,
+    UnconsumedDataError, TagError, StringEncodingError, DuplicateKeyError,
     DeterministicError,
     FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat
 )
@@ -68,12 +68,12 @@ class DecoderFlags(IntEnum):
 
 class DeterministicFlags(IntEnum):
     '''Flags indicating what non-deterministic encodings to detect.'''
-    NONE       = 0x00
-    LENGTH     = 0x01
-    FLOAT      = 0x02
+    NONE = 0x00
+    LENGTH = 0x01
+    FLOAT = 0x02
     REALIZE_IL = 0x04
-    SORTING    = 0x08
-    ALL        = 0xff
+    SORTING = 0x08
+    ALL = 0xffff
 
 
 uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
@@ -310,24 +310,24 @@ class CBORDecoder:
     def decode_datetime_text(self, _tag_value):
         text = self.decode_item()
         if not isinstance(text, str):
-            raise TagTypeError('tagged date and time is not text')
+            raise TagError(f'datetime must be text, not {text!r}')
         try:
             return datetime_from_enhanced_RFC3339_text(text)
         except ValueError:
-            raise TagValueError(f'invalid date and time text {text!r}')
+            raise TagError(f'invalid date and time text {text!r}')
 
     def decode_timestamp(self, _tag_value):
         # Bignums are invalid as timestamps
         with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
             timestamp = self.decode_item()
         if not isinstance(timestamp, (int, float)):
-            raise TagTypeError('tagged timestamp is not a plain integer or float')
+            raise TagError(f'timestamp must be an integer or float, not {timestamp!r}')
         return datetime.fromtimestamp(timestamp, timezone.utc)
 
     def decode_bignum(self, tag_value):
         bignum_encoding = self.decode_item()
         if not isinstance(bignum_encoding, bytes):
-            raise TagTypeError('bignum payload must be a byte string')
+            raise TagError(f'bignum must be a byte string, not {bignum_encoding!r}')
         value = int.from_bytes(bignum_encoding, byteorder='big')
         if tag_value == 0x03:
             value = -1 - value
@@ -340,14 +340,14 @@ class CBORDecoder:
         with self.flags_set(DecoderFlags.RETAIN_BIGNUMS):
             parts = self.decode_item()
         if not isinstance(parts, Sequence) or len(parts) != 2:
-            raise TagTypeError(f'{type_str} must be encoded as a list [exponent, mantissa]')
+            raise TagError(f'{type_str} must be encoded as a list [exponent, mantissa]')
         exponent, mantissa = parts
         if not isinstance(exponent, int):  # Note: exponent bignum is invalid
-            raise TagTypeError(f'{type_str} has an invalid exponent {exponent}')
+            raise TagError(f'{type_str} has an invalid exponent {exponent}')
         if isinstance(mantissa, BigNum):
             mantissa = mantissa.value
         elif not isinstance(mantissa, int):
-            raise TagTypeError(f'{type_str} has an invalid mantissa {mantissa}')
+            raise TagError(f'{type_str} has an invalid mantissa {mantissa}')
         return mantissa, exponent
 
     def decode_decimal(self, _tag_value):
@@ -362,16 +362,16 @@ class CBORDecoder:
         parts = self.decode_item()
         if (not isinstance(parts, Sequence) or
                 len(parts) != 2 or not all(isinstance(part, int) for part in parts)):
-            raise TagTypeError('a rational must be encoded as a 2-integer list')
+            raise TagError(f'invalid rational encoding {parts!r}')
         numerator, denominator = parts
         if denominator <= 0:
-            raise TagValueError(f'denominator of rational must be positive, not {denominator:,d}')
+            raise TagError(f'denominator of rational must be positive, not {denominator:,d}')
         return Fraction(numerator, denominator)
 
     def decode_typed_array(self, tag_value):
         array_bytes = self.decode_item()
         if not isinstance(array_bytes, bytes):
-            raise TagTypeError('an array must be encoded as a byte string')
+            raise TagError(f'a typed array must be encoded as a byte string')
         typecode, swap_bytes = typed_array_decoder_hints[tag_value]
         result = array(typecode, array_bytes)
         if swap_bytes:
@@ -381,53 +381,53 @@ class CBORDecoder:
     def decode_regexp(self, _tag_value):
         pattern = self.decode_item()
         if not isinstance(pattern, str):
-            raise TagTypeError('a regexp must be encoded as a text string')
+            raise TagError(f'a regexp must be encoded as a text string, not {pattern!r}')
         return re.compile(pattern)
 
     def decode_uuid(self, _tag_value):
         uuid = self.decode_item()
         if not isinstance(uuid, bytes):
-            raise TagTypeError('a UUID must be encoded as a byte string')
+            raise TagError(f'a UUID must be encoded as a byte string, not {uuid!r}')
         return UUID(bytes=uuid)
 
     def decode_set(self, _tag_value):
         with self.flags_set(DecoderFlags.IMMUTABLE):
             members = self.decode_item()
         if not isinstance(members, Sequence):
-            raise TagTypeError('a set must be encoded as a list')
+            raise TagError('a set must be encoded as a list')
         cls = frozenset if self._flags & DecoderFlags.IMMUTABLE else set
         return cls(members)
 
     def decode_ip_address(self, _tag_value):
         addr_bytes = self.decode_item()
         if not isinstance(addr_bytes, bytes):
-            raise TagTypeError('an IP address must be encoded as a byte string')
+            raise TagError('an IP address must be encoded as a byte string')
         try:
             return ip_address(addr_bytes)
         except ValueError:
-            raise TagValueError(f'invalid IP address: {addr_bytes}') from None
+            raise TagError(f'invalid IP address: {addr_bytes}') from None
 
     def decode_ip_network(self, _tag_value):
         # For some daft reason a one-element dictionary was chosen over a pair
         value = self.decode_item()
         if not isinstance(value, Mapping):
-            raise TagTypeError('an IP network must be encoded as a map')
+            raise TagError('an IP network must be encoded as a map')
         if len(value) != 1:
-            raise TagValueError('an IP network must be encoded as a single-entry map')
+            raise TagError('an IP network must be encoded as a single-entry map')
         for pair in value.items():
             if not (isinstance(pair[0], bytes) and isinstance(pair[1], int)):
-                raise TagTypeError('invalid IP network encoding {pair!r}')
+                raise TagError('invalid IP network encoding {pair!r}')
             try:
                 return ip_network(pair, strict=False)
             except (ValueError, TypeError):  # library bug raises a TypeError in some cases
-                raise TagValueError(f'invalid IP network {pair}') from None
+                raise TagError(f'invalid IP network {pair}') from None
 
     def decode_ordered_dict(self, _tag_value):
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
         self._flags |= DecoderFlags.ORDERED
         result = self.decode_item()
         if not isinstance(result, Mapping):
-            raise TagTypeError('ordered map not encoded as a map')
+            raise TagError('ordered map not encoded as a map')
         return result
 
     def decode_shared(self, _tag_value):
@@ -441,11 +441,11 @@ class CBORDecoder:
     def decode_shared_ref(self, _tag_value):
         shared_id = self.decode_item()
         if not isinstance(shared_id, int):
-            raise TagTypeError(f'shared reference must be an integer')
+            raise TagError(f'shared reference must be an integer')
         try:
             return self._shared_ids[shared_id]
         except KeyError:
-            raise TagValueError(f'non-existent shared reference {shared_id}') from None
+            raise TagError(f'non-existent shared reference {shared_id}') from None
 
     def read(self, n):
         result = self._read(n)

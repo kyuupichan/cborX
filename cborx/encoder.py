@@ -230,8 +230,7 @@ class CBOREncoder:
             if self.tzinfo:
                 value = value.replace(tzinfo=self.tzinfo)
             else:
-                raise EncodingError('specify tzinfo option to encode a datetime '
-                                        'without tzinfo')
+                raise EncodingError('specify tzinfo option to encode a datetime without tzinfo')
         if self.datetime_style == CBORDateTimeStyle.TIMESTAMP:
             tag = self.encode_tag(1)
             value = value.timestamp()

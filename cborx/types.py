@@ -41,10 +41,9 @@ __all__ = (
     'CBORILObject', 'CBORILByteString', 'CBORILTextString', 'CBORILList', 'CBORILDict',
     'CBORError', 'EncodingError', 'DecodingError', 'IllFormedError', 'InvalidError',
     'BadInitialByteError', 'MisplacedBreakError', 'BadSimpleError', 'UnexpectedEOFError',
-    'UnconsumedDataError', 'TagTypeError', 'TagValueError', 'StringEncodingError',
+    'UnconsumedDataError', 'TagError', 'StringEncodingError',
     'DuplicateKeyError', 'DeterministicError',
 )
-
 
 # Exception class hierarchy:
 #
@@ -58,8 +57,7 @@ __all__ = (
 #       UnexpectedEOFError
 #       UnconsumedDataError
 #     InvalidError
-#       TagTypeError
-#       TagValueError
+#       TagError
 #       StringEncodingError
 #       DuplicateKeyError
 #       DeterministicError
@@ -107,12 +105,8 @@ class InvalidError(DecodingError):
     '''Indicates CBOR that is well-formed but that violates a validity rule'''
 
 
-class TagTypeError(InvalidError):
-    '''Indicates a tag with payload (or an element of it) of an invalid type'''
-
-
-class TagValueError(InvalidError):
-    '''Indicates a tag with payload (or an element of it) of an invalid value'''
+class TagError(InvalidError):
+    '''Indicates a tag's payload (or an element of it) has an invalid type or value'''
 
 
 class StringEncodingError(InvalidError):
@@ -125,7 +119,6 @@ class DuplicateKeyError(InvalidError):
 
 class DeterministicError(InvalidError):
     '''Indicates the CBOR encoding was not deterministic'''
-
 
 
 @attr.s(slots=True, order=True, frozen=True)

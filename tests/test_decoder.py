@@ -295,28 +295,14 @@ def test_truncated(encoding):
 
 
 @pytest.mark.parametrize("encoding, match", [
+    ('c000', 'datetime must be text, not 0'),
     ('c06161', 'invalid date and time text'),
-    ('d81d05', 'non-existent shared reference'),
-    ('d90102d81c81d81d00', 'non-existent shared reference'),
-    ('d9010443c00a0a', 'invalid IP address'),
-    ('d81e820100', 'denominator of rational must be positive, not 0'),
-    ('d81e82052a', 'denominator of rational must be positive, not -11'),
-    ('d90105a24400000000000000', 'IP network must be encoded as a single-entry map'),
-    ('d90105a1440000000020', 'invalid IP network'),
-])
-def test_tagged_value_error(encoding, match):
-    with pytest.raises(TagValueError, match=match):
-        loads(bytes.fromhex(encoding))
-
-
-@pytest.mark.parametrize("encoding, match", [
-    ('c000', 'date and time is not text'),
-    ('c140', 'timestamp is not a plain integer or float'),
-    ('c160', 'timestamp is not a plain integer or float'),
+    ('c140', "timestamp must be an integer or float, not b''"),
+    ('c160', "timestamp must be an integer or float, not ''"),
     # Bignum not permitted as timestamp
-    ('c1c240', 'timestamp is not a plain integer or float'),
-    ('c200', 'bignum payload must be a byte string'),
-    ('c300', 'bignum payload must be a byte string'),
+    ('c1c240', 'timestamp must be an integer or float, not BigNum\\(value=0\\)'),
+    ('c200', 'bignum must be a byte string, not 0'),
+    ('c300', 'bignum must be a byte string, not 0'),
     ('c48102', 'decimal must be encoded'),
     ('c483020202', 'decimal must be encoded as'),
     ('c40000', 'decimal must be encoded as'),
@@ -329,23 +315,30 @@ def test_tagged_value_error(encoding, match):
     ('c5820040', 'bigfloat has an invalid mantissa'),
     ('c5824040', 'bigfloat has an invalid exponent b\'\''),
     ('c582c24000', 'bigfloat has an invalid exponent BigNum\\(value=0\\)'),
-    ('d81e8102', 'rational must be encoded'),
-    ('d81e83020202', 'rational must be encoded as'),
-    ('d81e0000', 'rational must be encoded as'),
-    ('d81e824040', 'rational must be encoded as'),
-    ('d8234102', 'regexp must be encoded as a text string'),
-    ('d82500', 'UUID must be encoded as a byte string'),
+    ('d81d05', 'non-existent shared reference'),
+    ('d81e8102', 'invalid rational encoding \\[2\\]'),
+    ('d81e820100', 'denominator of rational must be positive, not 0'),
+    ('d81e82052a', 'denominator of rational must be positive, not -11'),
+    ('d81e83020202', 'invalid rational encoding \\[2, 2, 2\\]'),
+    ('d81e0000', 'invalid rational encoding 0'),
+    ('d81e824040', "invalid rational encoding \\[b'', b''\\]"),
+    ('d8234102', "regexp must be encoded as a text string, not b'\\\\x02'"),
+    ('d82500', 'UUID must be encoded as a byte string, not 0'),
     ('d9010200', 'set must be encoded as a list'),
+    ('d90102d81c81d81d00', 'non-existent shared reference'),
     ('d9010400', 'IP address must be encoded as a byte string'),
+    ('d9010443c00a0a', 'invalid IP address'),
     ('d9010500',' IP network must be encoded as a map'),
+    ('d90105a1440000000020', 'invalid IP network'),
     ('d90105a144c0a80064420102', 'invalid IP network'),
+    ('d90105a24400000000000000', 'IP network must be encoded as a single-entry map'),
     ('d9011080', 'ordered map not encoded as a map'),
     ('d81d60', 'shared reference must be an integer'),
     ('d81d80', 'shared reference must be an integer'),
-    ('d845820102', 'array must be encoded as a byte string'),
+    ('d845820102', 'typed array must be encoded as a byte string'),
 ])
 def test_tagged_type_error(encoding, match):
-    with pytest.raises(TagTypeError, match=match):
+    with pytest.raises(TagError, match=match):
         loads(bytes.fromhex(encoding))
 
 
