@@ -1,7 +1,7 @@
 from array import array
 from collections import OrderedDict
 from io import BytesIO
-from itertools import takewhile
+from itertools import count, takewhile
 import math
 import re
 
@@ -10,32 +10,48 @@ import pytest
 from cborx import *
 
 
-def handle_context(item, item_gen):
+def handle_context(item, item_gen, immutable):
+    if item.kind == ContextKind.MAP:
+        kind = FrozenDict if immutable else dict
+        if item.length is None:
+            def pairs():
+                while True:
+                    key = realize_one(item_gen, True)
+                    if key is Break:
+                        break
+                    yield key, realize_one(item_gen, immutable)
+            pairs_gen = pairs()
+        else:
+            pairs_gen = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
+                         for _ in range(item.length))
+        return kind(pairs_gen)
+
     if item.length is None:
-        parts = takewhile(lambda item: item is not Break, item_gen)
+        realized_items = (realize_one(item_gen, immutable) for _ in count())
+        parts = takewhile(lambda item: item is not Break, realized_items)
     else:
-        parts = (realize_one(item_gen) for _ in range(item.length))
+        parts = (realize_one(item_gen, immutable) for _ in range(item.length))
     if item.kind == ContextKind.BYTES:
         return b''.join(parts)
     elif item.kind == ContextKind.TEXT:
         return ''.join(parts)
     elif item.kind == ContextKind.LIST:
-        return list(parts)
+        return tuple(parts) if immutable else list(parts)
     else:
-        i = iter(parts)
-        return dict(zip(i, i))
+        assert item.kind == ContextKind.TAG
+        return CBORTag(item.length, realize_one(item_gen, immutable))
 
 
-def realize_one(item_gen):
+def realize_one(item_gen, immutable):
     item = next(item_gen)
     if isinstance(item, ContextChange):
-        return handle_context(item, item_gen)
+        return handle_context(item, item_gen, immutable)
     return item
 
 
 def realize_top_one(raw):
     item_gen = streams_sequence(raw)
-    item = realize_one(item_gen)
+    item = realize_one(item_gen, False)
     with pytest.raises(StopIteration):
         next(item_gen)
     return item
@@ -71,36 +87,82 @@ singleton_tests = [
      'b-jumped'),
     ('59ffff' + '0' * 131070, bytes(65535), 'b-65535'),
     ('5a0001' + '0' * 131076, bytes(65536), 'b-65536'),
-    # [b'the'] encoded non-minimally
+    #     [b'the'] encoded non-minimally
     ('5f 5803 746865ff', b'the', 'b-the-1'),
     ('5f 590003 746865ff', b'the', 'b-the-2'),
     ('5f 5a00000003 746865ff', b'the', 'b-the-3'),
     ('5f 5b0000000000000003 746865ff', b'the', 'b-the-4'),
-    # Indefinite-length byte string
+    #     Indefinite-length byte strings
     ('5f ff', b'', 'b-il empty'),
-    # [b'the ', b'quick ', b'brown ', b'', b'fox jumped']
+    #     [b'the ', b'quick ', b'brown ', b'', b'fox jumped']
     ('5f 4474686520 46717569636b20 4662726f776e20 40 4a666f78206a756d706564 ff',
      b'the quick brown fox jumped', 'b-il the quick brown fox jumped'),
     # mt-3 text strings
     ('60', '', 't-empty'),
+    ('6161', 'a', 't-a'),
+    ('62c3bc', '\u00fc', 't-u00fc'),
+    ('63e6b0b4', '\u6c34', 't-u6c34'),
+    ('62225c', '"\\', 't-specials'),
+    ('6449455446', 'IETF', 't-IETF'),
+    ('64f0908591', '\ud800\udd51'.encode('utf-16', 'surrogatepass').decode('utf-16'), 't-utf16'),
     ('667a6f6d626965', 'zombie', 't-zombie'),
     ('7a00010000' + '30' * 65536, '0' * 65536, 't-65536'),
-    # Indefinite-length text strings
-    ('7f ff', '', 't-il empty'),
-    # ['the ', 'quick ', 'brown ', '', 'fox jumped']
-    ('7f 6474686520 66717569636b20 6662726f776e20 60 6a666f78206a756d706564 ff',
-     'the quick brown fox jumped', 't-the quick brown fox jumped'),
-    # ['the'] encoded non-minimally
+    #     ['the'] encoded non-minimally
     ('7f 7803 746865ff', 'the', 't-the-1'),
     ('7f 790003 746865ff', 'the', 't-the-2'),
     ('7f 7a00000003 746865ff', 'the', 't-the-3'),
     ('7f 7b0000000000000003 746865ff', 'the', 't-the-4'),
+    #     Indefinite-length text strings
+    ('7f ff', '', 't-il empty'),
+    #     ['the ', 'quick ', 'brown ', '', 'fox jumped']
+    ('7f 6474686520 66717569636b20 6662726f776e20 60 6a666f78206a756d706564 ff',
+     'the quick brown fox jumped', 't-the quick brown fox jumped'),
     # mt-4 lists
     ('80', [], 'empty list'),
     ('8301021821', [1, 2, 33], 'list length 3'),
     ('8383810102030405', [[[1], 2, 3], 4, 5], 'nested lists'),
-    # Bignums
+    #      Indefinite-length arrays
+    ('9fff', [], 'il-list empty'),
+    ('9f018202039f0405ffff', [1, [2, 3], [4, 5]], 'il-list 1'),  # [_ 1, [2, 3], [_ 4, 5]]
+    ('9f01820203820405ff', [1, [2, 3], [4, 5]], 'il-list 2'),  # [_ 1, [2, 3], [4, 5]]
+    ('83018202039f0405ff', [1, [2, 3], [4, 5]], 'il-list 3'),  # [1, [2, 3], [_ 4, 5]]
+    ('83019f0203ff820405', [1, [2, 3], [4, 5]], 'il-list 4'),  # [1, [_ 2, 3], [4, 5]]
+    ('9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff', list(range(1, 26)),
+     'il-list 5'),
+    # mt-5 maps
+    ('a0', {}, 'map empty'),
+    ('a201020304', {1: 2, 3: 4}, 'map 1234'),
+    ('a26161016162820203', {'a': 1, 'b': [2, 3]}, 'map a1b23'),
+    ('826161a161626163', ['a', {'b': 'c'}], 'map abc'),
+    ('a56161614161626142616361436164614461656145', {k: k.upper() for k in 'abcde'}, 'map abcde'),
+    ('bfff', {}, 'il-map empty'),
+    ('bf61610161629f0203ffff', {'a': 1, 'b': [2, 3]}, 'il-map 1'), # {_ "a": 1, "b": [_ 2, 3]}
+    ('bf0102ff', {1: 2}, 'il-map 2'), # {_ 1: 2}
+    ('bf820102820304ff', {(1, 2): [3, 4]}, 'il-map 3'),  # {_ [1, 2]: [3, 4] }
+    ('826161bf61626163ff', ['a', {'b': 'c'}], 'il-map 4'),  # ["a", {_ "b": "c"}]
+    ('bf6346756ef563416d7421ff', {"Fun": True, "Amt": -2},
+     'il-map 5'), # {_ "Fun": true, "Amt": -2}
+    #    Bignums
     # (18446744073709551616, 'c249010000000000000000'),
+    # mt-7 simples
+    ('e0', CBORSimple(0), 'simple 0'),
+    ('f3', CBORSimple(19), 'simple 19'),
+    ('f4', False, 'simple false'),
+    ('f5', True, 'simple true'),
+    ('f6', None, 'simple null'),
+    ('f7', Undefined, 'simple undefined'),
+    ('f820', CBORSimple(32), 'simple 32'),
+    ('f8ff', CBORSimple(255), 'simple 255'),
+    ('fb4021cccccccccccd', 8.9, 'simple 8.9'),
+    ('f93e00', 1.5, 'simple 1.5 2byte'),
+    ('f97c00', math.inf, 'simple inf 2byte'),
+    ('f9fc00', -math.inf, 'simple -inf 2byte'),
+    ('fa3fc00000', 1.5, 'simple 1.5 4byte'),
+    ('fa7f800000', math.inf, 'simple inf 4byte'),
+    ('faff800000', -math.inf, 'simple -inf 4byte'),
+    ('fb3ff8000000000000', 1.5, 'simple 1.5 8byte'),
+    ('fb7ff0000000000000', math.inf, 'simple inf 8byte'),
+    ('fbfff0000000000000', -math.inf, 'simple -inf 8byte'),
 ]
 
 @pytest.mark.parametrize("encoding, expected",
@@ -119,69 +181,35 @@ def test_well_formed_streaming(encoding, expected):
     assert result == expected
 
 
+tag_tests = [
+    ('c000', CBORTag(0, 0), 'Tag 0'),
+    ('d020', CBORTag(16, -1), 'Tag 16'),
+    ('d81863666f6f', CBORTag(24, 'foo'), 'Tag 24'),
+    ('d9010063626172', CBORTag(256, 'bar'), 'Tag 256'),
+    ('da00010000820102', CBORTag(65536, [1, 2]), 'Tag 65536'),
+    ('db0000000100000000a10102', CBORTag(1 << 32, {1: 2}), 'Tag 1 << 32'),
+]
+
+@pytest.mark.parametrize("encoding, expected",
+                         [(test[0], test[1]) for test in tag_tests],
+                         ids = [test[2] for test in tag_tests])
+def test_tag_streaming(encoding, expected):
+    result = realize_top_one(bytes.fromhex(encoding))
+    assert result == expected
+
+
 def test_decode_indefinite_length_text_string_split_utf8():
     with pytest.raises(StringEncodingError):
         loads(bytes.fromhex('7f 61e3 628182 ff'))
 
 
-@pytest.mark.parametrize("value, encoding", (
-    ('', '60'),
-    ('a', '6161'),
-    ('IETF', '6449455446'),
-    ('"\\', '62225c'),
-    ('\u00fc', '62c3bc'),
-    ('\u6c34', '63e6b0b4'),
-    ('\ud800\udd51'.encode('utf-16', 'surrogatepass').decode('utf-16'), '64f0908591'),
-))
-def test_decode_text_string(value, encoding):
-    result = loads(bytes.fromhex(encoding))
-    assert result == value
-
-
 @pytest.mark.parametrize("value, expected", (
-    (CBORILList(iter(())), []),
-    (CBORILList(iter((1, [2, 3], CBORILList(iter([4, 5]))))), [1, [2, 3], [4, 5]]),
-    ([1, CBORILList(iter([2, 3])), [4, 5]], [1, [2, 3], [4, 5]]),
-))
-def test_decode_indefinite_length_list(value, expected):
-    encoding = dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False)
-    result = loads(encoding)
-    assert result == expected
-
-
-@pytest.mark.parametrize("value, expected", (
-    (CBORILDict(iter(())), {}),
-    (CBORILDict(iter( [(1, 2)] )), {1 : 2}),
     (CBORILDict(iter( [((1, 2), (3, 4))])), {(1, 2): [3, 4]}),
+
 ))
 def test_decode_indefinite_length_dict(value, expected):
     encoding = dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False)
     result = loads(encoding)
-    assert result == expected
-
-
-@pytest.mark.parametrize("encoding, expected", [
-    ('e0', CBORSimple(0)),
-    ('f3', CBORSimple(19)),
-    ('f4', False),
-    ('f5', True),
-    ('f6', None),
-    ('f7', Undefined),
-    ('f820', CBORSimple(32)),
-    ('f8ff', CBORSimple(255)),
-    ('fb4021cccccccccccd', 8.9),
-    ('f93e00', 1.5),
-    ('f97c00', math.inf),
-    ('f9fc00', -math.inf),
-    ('fa3fc00000', 1.5),
-    ('fa7f800000', math.inf),
-    ('faff800000', -math.inf),
-    ('fb3ff8000000000000', 1.5),
-    ('fb7ff0000000000000', math.inf),
-    ('fbfff0000000000000', -math.inf),
-])
-def test_decode_simple(encoding, expected):
-    result = loads(bytes.fromhex(encoding))
     assert result == expected
 
 

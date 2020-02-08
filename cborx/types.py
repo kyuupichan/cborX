@@ -338,6 +338,7 @@ class ContextKind(IntEnum):
     TEXT = 1
     LIST = 2
     MAP = 3
+    TAG = 4
 
 
 @attr.s(slots=True, frozen=True)
