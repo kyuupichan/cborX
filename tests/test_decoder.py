@@ -1,6 +1,7 @@
 from array import array
 from collections import OrderedDict
 from io import BytesIO
+from itertools import takewhile
 import math
 import re
 
@@ -9,68 +10,112 @@ import pytest
 from cborx import *
 
 
-@pytest.mark.parametrize("value, encoding", (
-    (0, '00'),
-    (1, '01'),
-    (10, '0a'),
-    (23, '17'),
-    (24, '1818'),
-    (25, '1819'),
-    (100, '1864'),
-    (1000, '1903e8'),
-    (1000000, '1a000f4240'),
-    (1000000000000, '1b000000e8d4a51000'),
-    (18446744073709551615, '1bffffffffffffffff'),
-    (-18446744073709551616, '3bffffffffffffffff'),
-    (18446744073709551616, 'c249010000000000000000'),
-    (-1, '20'),
-    (-10, '29'),
-    (-100, '3863'),
-    (-1000, '3903e7'),
-))
-def test_decode_int(value, encoding):
-    result = loads(bytes.fromhex(encoding))
-    assert result == value
+def handle_context(item, item_gen):
+    if item.length is None:
+        parts = takewhile(lambda item: item is not Break, item_gen)
+    else:
+        parts = (realize_one(item_gen) for _ in range(item.length))
+    if item.kind == ContextKind.BYTES:
+        return b''.join(parts)
+    elif item.kind == ContextKind.TEXT:
+        return ''.join(parts)
+    elif item.kind == ContextKind.LIST:
+        return list(parts)
+    else:
+        i = iter(parts)
+        return dict(zip(i, i))
 
 
-@pytest.mark.parametrize("value, encoding", (
-    ('', '40'),
-    ('01020304', '4401020304'),
-    ('01' * 23, '57' + '01' * 23),
-    ('01' * 24, '5818' + '01' * 24),
-))
-def test_decode_byte_string(value, encoding):
-    result = loads(bytes.fromhex(encoding))
-    assert result == bytes.fromhex(value)
+def realize_one(item_gen):
+    item = next(item_gen)
+    if isinstance(item, ContextChange):
+        return handle_context(item, item_gen)
+    return item
 
 
-@pytest.mark.parametrize("encoding, expected", (
+def realize_top_one(raw):
+    item_gen = streams_sequence(raw)
+    item = realize_one(item_gen)
+    with pytest.raises(StopIteration):
+        next(item_gen)
+    return item
+
+
+# econding, expected, id
+singleton_tests = [
+    # mt-0 unsigned integers
+    ('00', 0, '0'),
+    ('01', 1, '1'),
+    ('0a', 10, '10'),
+    ('17', 23, '23'),
+    ('1818', 24, '24'),
+    ('1819', 25, '25'),
+    ('1864', 100, '100'),
+    ('1903e8', 1000, '1000'),
+    ('1a000f4240', 1_000_000, '1m'),
+    ('1b000000e8d4a51000', 1_000_000_000_000, '1b'),
+    ('1bffffffffffffffff', 18446744073709551615, 'UINT_MAX'),
+    # mt-1 negative integers
+    ('20', -1, '-1'),
+    ('37', -24, '-24'),
+    ('3818', -25, '25'),
+    ('38ff', -256, '-256'),
+    ('3903e7', -1000, '-1000'),
+    ('3a000f423f', -1_000_000, '-1m'),
+    ('3bffffffffffffffff', -18446744073709551616, 'INT_MIN'),
+    # mt-2 byte strings
+    ('40', b'', 'b-empty'),
+    ('467a6f6d626965', b'zombie', 'b-zombie'),
+    ('5774686520717569636b2062726f776e20666f78206a756d', b'the quick brown fox jum', 'b-jum'),
+    ('581a74686520717569636b2062726f776e20666f78206a756d706564', b'the quick brown fox jumped',
+     'b-jumped'),
+    ('59ffff' + '0' * 131070, bytes(65535), 'b-65535'),
+    ('5a0001' + '0' * 131076, bytes(65536), 'b-65536'),
+    # [b'the'] encoded non-minimally
+    ('5f 5803 746865ff', b'the', 'b-the-1'),
+    ('5f 590003 746865ff', b'the', 'b-the-2'),
+    ('5f 5a00000003 746865ff', b'the', 'b-the-3'),
+    ('5f 5b0000000000000003 746865ff', b'the', 'b-the-4'),
+    # Indefinite-length byte string
+    ('5f ff', b'', 'b-il empty'),
     # [b'the ', b'quick ', b'brown ', b'', b'fox jumped']
     ('5f 4474686520 46717569636b20 4662726f776e20 40 4a666f78206a756d706564 ff',
-     b'the quick brown fox jumped'),
-    # [b'the'] encoded non-minimally
-    ('5f 5803 746865ff', b'the'),
-    ('5f 590003 746865ff', b'the'),
-    ('5f 5a00000003 746865ff', b'the'),
-    ('5f 5b0000000000000003 746865ff', b'the'),
-))
-def test_decode_indefinite_length_byte_string(encoding, expected):
+     b'the quick brown fox jumped', 'b-il the quick brown fox jumped'),
+    # mt-3 text strings
+    ('60', '', 't-empty'),
+    ('667a6f6d626965', 'zombie', 't-zombie'),
+    ('7a00010000' + '30' * 65536, '0' * 65536, 't-65536'),
+    # Indefinite-length text strings
+    ('7f ff', '', 't-il empty'),
+    # ['the ', 'quick ', 'brown ', '', 'fox jumped']
+    ('7f 6474686520 66717569636b20 6662726f776e20 60 6a666f78206a756d706564 ff',
+     'the quick brown fox jumped', 't-the quick brown fox jumped'),
+    # ['the'] encoded non-minimally
+    ('7f 7803 746865ff', 'the', 't-the-1'),
+    ('7f 790003 746865ff', 'the', 't-the-2'),
+    ('7f 7a00000003 746865ff', 'the', 't-the-3'),
+    ('7f 7b0000000000000003 746865ff', 'the', 't-the-4'),
+    # mt-4 lists
+    ('80', [], 'empty list'),
+    ('8301021821', [1, 2, 33], 'list length 3'),
+    ('8383810102030405', [[[1], 2, 3], 4, 5], 'nested lists'),
+    # Bignums
+    # (18446744073709551616, 'c249010000000000000000'),
+]
+
+@pytest.mark.parametrize("encoding, expected",
+                         [(test[0], test[1]) for test in singleton_tests],
+                         ids = [test[2] for test in singleton_tests])
+def test_well_formed_loads(encoding, expected):
     result = loads(bytes.fromhex(encoding))
     assert result == expected
 
 
-@pytest.mark.parametrize("encoding, expected", (
-    # ['the ', 'quick ', 'brown ', '', 'fox jumped']
-    ('7f 6474686520 66717569636b20 6662726f776e20 60 6a666f78206a756d706564 ff',
-     'the quick brown fox jumped'),
-    # ['the'] encoded non-minimally
-    ('7f 7803 746865ff', 'the'),
-    ('7f 790003 746865ff', 'the'),
-    ('7f 7a00000003 746865ff', 'the'),
-    ('7f 7b0000000000000003 746865ff', 'the'),
-))
-def test_decode_indefinite_length_text_string(encoding, expected):
-    result = loads(bytes.fromhex(encoding))
+@pytest.mark.parametrize("encoding, expected",
+                         [(test[0], test[1]) for test in singleton_tests],
+                         ids = [test[2] for test in singleton_tests])
+def test_well_formed_streaming(encoding, expected):
+    result = realize_top_one(bytes.fromhex(encoding))
     assert result == expected
 
 
@@ -89,16 +134,6 @@ def test_decode_indefinite_length_text_string_split_utf8():
     ('\ud800\udd51'.encode('utf-16', 'surrogatepass').decode('utf-16'), '64f0908591'),
 ))
 def test_decode_text_string(value, encoding):
-    result = loads(bytes.fromhex(encoding))
-    assert result == value
-
-
-@pytest.mark.parametrize("value, encoding", (
-    ([], '80'),
-    ([1, 2, 33], '8301021821'),
-    ([[[1], 2, 3], 4, 5], '8383810102030405'),
-))
-def test_decode_list(value, encoding):
     result = loads(bytes.fromhex(encoding))
     assert result == value
 

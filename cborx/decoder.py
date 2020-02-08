@@ -25,6 +25,10 @@
 
 '''CBOR decoding.'''
 
+__all__ = ('load', 'loads', 'load_sequence', 'loads_sequence', 'streams_sequence',
+           'CBORDecoder', 'DeterministicFlags')
+
+
 import itertools
 import re
 from array import array
@@ -48,15 +52,12 @@ from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
     UnconsumedDataError, TagError, StringEncodingError, DuplicateKeyError,
     DeterministicError,
-    FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat
+    FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat,
+    ContextChange, ContextKind, Break
 )
 from cborx.util import (
     datetime_from_enhanced_RFC3339_text, bjoin, sjoin, typed_array_decoder_hints
 )
-
-
-__all__ = ('load', 'loads', 'load_sequence', 'loads_sequence',
-           'CBORDecoder', 'DeterministicFlags')
 
 
 class DecoderFlags(IntEnum):
@@ -98,6 +99,13 @@ default_tag_decoders = {
 }
 default_tag_decoders.update({tag_value: 'decode_typed_array' for tag_value
                              in typed_array_decoder_hints})
+
+
+def decode_text(raw_utf8):
+    try:
+        return raw_utf8.decode()
+    except UnicodeDecodeError:
+        raise StringEncodingError('invalid string encoding')
 
 
 class CBORDecoder:
@@ -211,11 +219,7 @@ class CBORDecoder:
             if self._deterministic & DeterministicFlags.REALIZE_IL:
                 raise DeterministicError(f'indeterminate-length text string')
             return sjoin(self._text_string_parts())
-        utf8_bytes = self.read(length)
-        try:
-            return utf8_bytes.decode()
-        except UnicodeDecodeError:
-            raise StringEncodingError('invalid string encoding')
+        return decode_text(self.read(length))
 
     def _list_parts(self):
         read = self.read
@@ -510,3 +514,130 @@ def load_sequence(fp, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     yield from CBORDecoder(fp.read, **kwargs).decode_sequence()
+
+
+class CBORStreamDecoder:
+    '''Decodes CBOR-encoded data'''
+
+    def __init__(self, read):
+        self._read = read
+        self._major_decoders = (
+            self.decode_unsigned_int,
+            self.decode_negative_int,
+            self.decode_byte_string,
+            self.decode_text_string,
+            self.decode_list,
+            # self.decode_dict,
+            # self.decode_tag,
+            # self.decode_simple
+        )
+        self._pending_id = None
+        self._shared_id = itertools.count()
+        self._shared_ids = {}
+        self._flags = 0
+
+    def read(self, n):
+        result = self._read(n)
+        if len(result) == n:
+            return result
+        raise UnexpectedEOFError(f'need {n:,d} bytes but only {len(result):,d} available')
+
+    def decode_length(self, initial_byte):
+        minor = initial_byte & 0x1f
+        if minor < 24:
+            return minor
+        if minor < 28:
+            kind = minor - 24
+            length, = uint_unpackers[kind](self.read(1 << kind))
+            return length
+        if initial_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
+            return None
+        raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
+
+    def stream_one(self, check_eof=True):
+        initial_byte = ord(self.read(1))
+        length = self.decode_length(initial_byte)
+        yield from self._major_decoders[initial_byte >> 5](length)
+        if check_eof and self._read(1):
+            raise UnconsumedDataError('not all input consumed')
+
+    def stream_sequence(self):
+        major_decoders = self._major_decoders
+        decode_length = self.decode_length
+        read = self.read
+        while True:
+            try:
+                initial_byte = ord(read(1))
+            except UnexpectedEOFError:
+                break
+            length = decode_length(initial_byte)
+            yield from major_decoders[initial_byte >> 5](length)
+
+    @staticmethod
+    def decode_unsigned_int(value):
+        yield value
+
+    @staticmethod
+    def decode_negative_int(value):
+        yield -1 - value
+
+    def decode_byte_string(self, length):
+        read = self.read
+        if length is None:
+            yield ContextChange(ContextKind.BYTES, None)
+            decode_length = self.decode_length
+            while True:
+                initial_byte = ord(read(1))
+                if 0x40 <= initial_byte < 0x5c:
+                    yield read(decode_length(initial_byte))
+                elif initial_byte == 0xff:
+                    break
+                else:
+                    raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x} in '
+                                              f'indefinite-length byte string')
+            yield Break
+        else:
+            yield read(length)
+
+    def decode_text_string(self, length):
+        read = self.read
+        if length is None:
+            yield ContextChange(ContextKind.TEXT, None)
+            decode_length = self.decode_length
+            while True:
+                initial_byte = ord(read(1))
+                if 0x60 <= initial_byte < 0x7c:
+                    yield decode_text(read(decode_length(initial_byte)))
+                elif initial_byte == 0xff:
+                    break
+                else:
+                    raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x} in '
+                                              f'indefinite-length byte string')
+            yield Break
+        else:
+            yield decode_text(self.read(length))
+
+    def decode_item(self, initial_byte):
+        length = self.decode_length(initial_byte)
+        yield from self._major_decoders[initial_byte >> 5](length)
+
+    def decode_list(self, length):
+        yield ContextChange(ContextKind.LIST, length)
+        read = self.read
+        decode_item = self.decode_item
+        if length is None:
+            while True:
+                initial_byte = ord(read(1))
+                if initial_byte == 0xff:
+                    break
+                yield from decode_item(initial_byte)
+            yield Break
+        else:
+            for _ in range(length):
+                yield from decode_item(ord(read(1)))
+
+
+def streams_sequence(raw, **kwargs):
+    read = BytesIO(raw).read
+    decoder = CBORStreamDecoder(read, **kwargs)
+    yield from decoder.stream_sequence()

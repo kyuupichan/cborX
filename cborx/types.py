@@ -27,6 +27,7 @@
 
 from collections import OrderedDict
 from collections.abc import Mapping
+from enum import IntEnum
 from functools import total_ordering
 from decimal import Decimal
 
@@ -36,13 +37,13 @@ from cborx.packing import pack_byte, pack_cbor_length
 from cborx.util import bjoin, sjoin
 
 __all__ = (
-    'Undefined', 'CBORSimple', 'CBORTag',
+    'Undefined', 'Break', 'CBORSimple', 'CBORTag',
     'FrozenDict', 'FrozenOrderedDict', 'BigFloat', 'BigNum',
     'CBORILObject', 'CBORILByteString', 'CBORILTextString', 'CBORILList', 'CBORILDict',
     'CBORError', 'EncodingError', 'DecodingError', 'IllFormedError', 'InvalidError',
     'BadInitialByteError', 'MisplacedBreakError', 'BadSimpleError', 'UnexpectedEOFError',
     'UnconsumedDataError', 'TagError', 'StringEncodingError',
-    'DuplicateKeyError', 'DeterministicError',
+    'DuplicateKeyError', 'DeterministicError', 'ContextChange', 'ContextKind',
 )
 
 # Exception class hierarchy:
@@ -140,7 +141,7 @@ class CBORTag:
 
 
 class CBORUndefined:
-    '''The class of the CBOR Undefined singleton'''
+    '''The class of the Undefined singleton'''
 
     def __encode_cbor__(self, encoder):
         return b'\xf7'
@@ -149,8 +150,19 @@ class CBORUndefined:
         return 'Undefined'
 
 
-# A singleton
+class CBORBreak:
+    '''The class of the Break singleton'''
+
+    def __encode_cbor__(self, encoder):
+        return b'\xff'
+
+    def __repr__(self):
+        return 'Break'
+
+
+# Singletons
 Undefined = CBORUndefined()
+Break = CBORBreak()
 
 
 @attr.s(slots=True, order=True, frozen=True)
@@ -319,3 +331,19 @@ class FrozenOrderedDict(FrozenDict):
     '''A frozen (immuatable) ordered dictionary.'''
 
     dict_class = OrderedDict
+
+
+class ContextKind(IntEnum):
+    BYTES = 0
+    TEXT = 1
+    LIST = 2
+    MAP = 3
+
+
+@attr.s(slots=True, frozen=True)
+class ContextChange:
+    kind = attr.ib()
+    length = attr.ib()
+
+    def __repr__(self):
+        return f'ContextChange({self.kind}, {self.length})'
