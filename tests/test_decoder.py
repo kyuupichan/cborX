@@ -96,7 +96,7 @@ async def realize_stream(raw):
         start += length
         return raw[start - length: start]
 
-    item_agen = streams_sequence(read).__anext__
+    item_agen = astreams_sequence(read).__anext__
     item = await realize_one(item_agen, False)
 #    with pytest.raises(StopAsyncIteration):
 #        await item_agen
