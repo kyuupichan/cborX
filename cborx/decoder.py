@@ -25,8 +25,7 @@
 
 '''CBOR decoding.'''
 
-__all__ = ('load', 'loads', 'load_sequence', 'loads_sequence', 'streams_sequence',
-           'CBORDecoder', 'DeterministicFlags')
+__all__ = ('load', 'loads', 'load_sequence', 'loads_sequence', 'CBORDecoder', 'DeterministicFlags')
 
 
 import itertools
@@ -44,17 +43,13 @@ from ipaddress import ip_address, ip_network
 from uuid import UUID
 
 
-from cborx.packing import (
-    unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64,
-    unpack_be_float2, unpack_be_float4, unpack_be_float8, pack_cbor_short_float,
-)
+from cborx.packing import pack_cbor_short_float, uint_unpackers, be_float_unpackers
+
 from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
     UnconsumedDataError, TagError, StringEncodingError, DuplicateKeyError,
     DeterministicError,
     FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat,
-    ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
-    ContextArray, ContextMap, ContextTag, Break
 )
 from cborx.util import (
     datetime_from_enhanced_RFC3339_text, bjoin, sjoin, typed_array_decoder_hints
@@ -78,9 +73,7 @@ class DeterministicFlags(IntEnum):
     ALL = 0xffff
 
 
-uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
 uint_minima = [24, 1 << 8, 1 << 16, 1 << 32]
-be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
 default_tag_decoders = {
     0: 'decode_datetime_text',
     1: 'decode_timestamp',
@@ -515,176 +508,3 @@ def load_sequence(fp, **kwargs):
     kwargs: arguments to pass to CBORDecoder
     '''
     yield from CBORDecoder(fp.read, **kwargs).decode_sequence()
-
-
-class CBORStreamDecoder:
-    '''Decodes CBOR-encoded data'''
-
-    def __init__(self, read, simple_value=None):
-        self._read = read
-        self._major_decoders = (
-            self.decode_unsigned_int,
-            self.decode_negative_int,
-            self.decode_byte_string,
-            self.decode_text_string,
-            self.decode_array,
-            self.decode_map,
-            self.decode_tag,
-            self.decode_simple
-        )
-        self._pending_id = None
-        self._simple_value = simple_value or CBORSimple
-        self._shared_id = itertools.count()
-        self._shared_ids = {}
-        self._flags = 0
-
-    def read(self, n):
-        result = self._read(n)
-        if len(result) == n:
-            return result
-        raise UnexpectedEOFError(f'need {n:,d} bytes but only {len(result):,d} available')
-
-    def decode_length(self, initial_byte):
-        minor = initial_byte & 0x1f
-        if minor < 24:
-            return minor
-        if minor < 28:
-            kind = minor - 24
-            length, = uint_unpackers[kind](self.read(1 << kind))
-            return length
-        if initial_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
-            return None
-        raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
-
-    def decode_unsigned_int(self, initial_byte):
-        yield self.decode_length(initial_byte)
-
-    def decode_negative_int(self, initial_byte):
-        yield -1 - self.decode_length(initial_byte)
-
-    def decode_byte_string(self, initial_byte):
-        length = self.decode_length(initial_byte)
-        read = self.read
-        if length is None:
-            yield ContextILByteString()
-            decode_length = self.decode_length
-            while True:
-                initial_byte = ord(read(1))
-                if 0x40 <= initial_byte < 0x5c:
-                    yield read(decode_length(initial_byte))
-                elif initial_byte == 0xff:
-                    break
-                else:
-                    raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x} in '
-                                              f'indefinite-length byte string')
-            yield Break
-        else:
-            yield read(length)
-
-    def decode_text_string(self, initial_byte):
-        length = self.decode_length(initial_byte)
-        read = self.read
-        if length is None:
-            yield ContextILTextString()
-            decode_length = self.decode_length
-            while True:
-                initial_byte = ord(read(1))
-                if 0x60 <= initial_byte < 0x7c:
-                    yield decode_text(read(decode_length(initial_byte)))
-                elif initial_byte == 0xff:
-                    break
-                else:
-                    raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x} in '
-                                              f'indefinite-length byte string')
-            yield Break
-        else:
-            yield decode_text(self.read(length))
-
-    def decode_array(self, initial_byte):
-        length = self.decode_length(initial_byte)
-        read = self.read
-        major_decoders = self._major_decoders
-        if length is None:
-            yield ContextILArray()
-            while True:
-                initial_byte = ord(read(1))
-                if initial_byte == 0xff:
-                    break
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-            yield Break
-        else:
-            yield ContextArray(length)
-            for _ in range(length):
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-
-    def decode_map(self, initial_byte):
-        length = self.decode_length(initial_byte)
-        read = self.read
-        major_decoders = self._major_decoders
-        if length is None:
-            yield ContextILMap()
-            while True:
-                initial_byte = ord(read(1))
-                if initial_byte == 0xff:
-                    break
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-            yield Break
-        else:
-            yield ContextMap(length)
-            for _ in range(length * 2):
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-
-    def decode_tag(self, initial_byte):
-        value = self.decode_length(initial_byte)
-        yield ContextTag(value)
-        initial_byte = ord(self.read(1))
-        yield from self._major_decoders[initial_byte >> 5](initial_byte)
-
-    def decode_simple(self, initial_byte):
-        # Pass initial_byte not length to detect ill-formed simples
-        value = initial_byte & 0x1f
-        if value < 20:
-            yield self._simple_value(value)
-        elif value < 24:
-            yield CBORSimple.assigned_values[value]
-        elif value == 24:
-            value = ord(self.read(1))
-            if value < 32:
-                raise BadSimpleError(f'simple value 0x{value:x} encoded with extra byte')
-            yield self._simple_value(value)
-        elif value < 28:
-            length = 1 << (value - 24)
-            float_value, = be_float_unpackers[value - 25](self.read(length))
-            yield float_value
-        elif value == 31:
-            raise MisplacedBreakError('break code outside indefinite-length object')
-        else:
-            raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
-
-    # External API
-
-    def stream_one(self, check_eof=True):
-        initial_byte = ord(self.read(1))
-        yield from self._major_decoders[initial_byte >> 5](initial_byte)
-        if check_eof and self._read(1):
-            raise UnconsumedDataError('not all input consumed')
-
-    def stream_sequence(self):
-        major_decoders = self._major_decoders
-        read = self.read
-        while True:
-            try:
-                initial_byte = ord(read(1))
-            except UnexpectedEOFError:
-                break
-            yield from major_decoders[initial_byte >> 5](initial_byte)
-
-
-def streams_sequence(raw, **kwargs):
-    read = BytesIO(raw).read
-    decoder = CBORStreamDecoder(read, **kwargs)
-    yield from decoder.stream_sequence()

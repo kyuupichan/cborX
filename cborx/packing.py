@@ -80,6 +80,10 @@ unpack_be_float8 = struct_be_d.unpack
 hex_to_bytes = bytes.fromhex
 
 
+uint_unpackers = [unpack_byte, unpack_be_uint16, unpack_be_uint32, unpack_be_uint64]
+be_float_unpackers = [unpack_be_float2, unpack_be_float4, unpack_be_float8]
+
+
 def pack_cbor_length(length, major):
     '''Return the CBOR encoding of a length for the given (shifted) major value.'''
     if length < 24:

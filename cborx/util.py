@@ -29,6 +29,7 @@ import re
 from array import array
 from datetime import datetime, date, timezone, time, timedelta
 
+
 bjoin = b''.join
 sjoin = ''.join
 time_regex = re.compile(r'T(\d\d):(\d\d):(\d\d)(.\d+)?(Z|([+-])(\d\d):(\d\d))$')
@@ -116,6 +117,5 @@ def _analyze_array_tags(base_tag_value):
                                          (4 if is_machine_float_le else 0))
 
     return decoder_hints, typecode_tag_values
-
 
 typed_array_decoder_hints, typecode_to_tag_map = _analyze_array_tags(64)
