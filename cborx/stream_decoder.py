@@ -39,13 +39,37 @@ from cborx.types import (
     ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
     ContextArray, ContextMap, ContextTag, Break, CBORSimple
 )
+from cborx.util import bjoin
+
+
+
+def buffered_read(read):
+    buff = b''
+
+    async def _read(n):
+        nonlocal buff
+
+        if n > len(buff):
+            length = len(buff)
+            parts = [buff]
+            while length < n:
+                part = await read()
+                if not part:
+                    raise UnexpectedEOFError(f'need {n:,d} bytes but only {length:,d} available')
+                length += len(part)
+                parts.append(part)
+            buff = bjoin(parts)
+
+        result, buff = buff[:n], buff[n:]
+        return result
+
+    return _read
 
 
 class CBORStreamDecoder:
     '''Decodes CBOR-encoded data'''
 
     def __init__(self, read, simple_value=None):
-        self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
             self.decode_negative_int,
@@ -56,42 +80,37 @@ class CBORStreamDecoder:
             self.decode_tag,
             self.decode_simple
         )
+        self.read = buffered_read(read)
         self._simple_value = simple_value or CBORSimple
 
-    def read(self, n):
-        result = self._read(n)
-        if len(result) == n:
-            return result
-        raise UnexpectedEOFError(f'need {n:,d} bytes but only {len(result):,d} available')
-
-    def decode_length(self, initial_byte):
+    async def decode_length(self, initial_byte):
         minor = initial_byte & 0x1f
         if minor < 24:
             return minor
         if minor < 28:
             kind = minor - 24
-            length, = uint_unpackers[kind](self.read(1 << kind))
+            length, = uint_unpackers[kind](await self.read(1 << kind))
             return length
         if initial_byte in {0x5f, 0x7f, 0x9f, 0xbf}:
             return None
         raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
 
-    def decode_unsigned_int(self, initial_byte):
-        yield self.decode_length(initial_byte)
+    async def decode_unsigned_int(self, initial_byte):
+        yield await self.decode_length(initial_byte)
 
-    def decode_negative_int(self, initial_byte):
-        yield -1 - self.decode_length(initial_byte)
+    async def decode_negative_int(self, initial_byte):
+        yield -1 - await self.decode_length(initial_byte)
 
-    def decode_byte_string(self, initial_byte):
-        length = self.decode_length(initial_byte)
+    async def decode_byte_string(self, initial_byte):
+        length = await self.decode_length(initial_byte)
         read = self.read
         if length is None:
             yield ContextILByteString()
             decode_length = self.decode_length
             while True:
-                initial_byte = ord(read(1))
+                initial_byte = ord(await read(1))
                 if 0x40 <= initial_byte < 0x5c:
-                    yield read(decode_length(initial_byte))
+                    yield await read(await decode_length(initial_byte))
                 elif initial_byte == 0xff:
                     break
                 else:
@@ -99,18 +118,18 @@ class CBORStreamDecoder:
                                               f'indefinite-length byte string')
             yield Break
         else:
-            yield read(length)
+            yield await read(length)
 
-    def decode_text_string(self, initial_byte):
-        length = self.decode_length(initial_byte)
+    async def decode_text_string(self, initial_byte):
+        length = await self.decode_length(initial_byte)
         read = self.read
         if length is None:
             yield ContextILTextString()
             decode_length = self.decode_length
             while True:
-                initial_byte = ord(read(1))
+                initial_byte = ord(await read(1))
                 if 0x60 <= initial_byte < 0x7c:
-                    yield decode_text(read(decode_length(initial_byte)))
+                    yield decode_text(await read(await decode_length(initial_byte)))
                 elif initial_byte == 0xff:
                     break
                 else:
@@ -118,53 +137,59 @@ class CBORStreamDecoder:
                                               f'indefinite-length byte string')
             yield Break
         else:
-            yield decode_text(self.read(length))
+            yield decode_text(await self.read(length))
 
-    def decode_array(self, initial_byte):
-        length = self.decode_length(initial_byte)
+    async def decode_array(self, initial_byte):
+        length = await self.decode_length(initial_byte)
         read = self.read
         major_decoders = self._major_decoders
         if length is None:
             yield ContextILArray()
             while True:
-                initial_byte = ord(read(1))
+                initial_byte = ord(await read(1))
                 if initial_byte == 0xff:
                     break
-                yield from major_decoders[initial_byte >> 5](initial_byte)
+                async for item in major_decoders[initial_byte >> 5](initial_byte):
+                    yield item
             yield Break
         else:
             yield ContextArray(length)
             for _ in range(length):
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
+                initial_byte = ord(await read(1))
+                async for item in major_decoders[initial_byte >> 5](initial_byte):
+                    yield item
 
-    def decode_map(self, initial_byte):
-        length = self.decode_length(initial_byte)
+    async def decode_map(self, initial_byte):
+        length = await self.decode_length(initial_byte)
         read = self.read
         major_decoders = self._major_decoders
         if length is None:
             yield ContextILMap()
             while True:
-                initial_byte = ord(read(1))
+                initial_byte = ord(await read(1))
                 if initial_byte == 0xff:
                     break
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
+                async for item in major_decoders[initial_byte >> 5](initial_byte):
+                    yield item
+                initial_byte = ord(await read(1))
+                async for item in major_decoders[initial_byte >> 5](initial_byte):
+                    yield item
             yield Break
         else:
             yield ContextMap(length)
             for _ in range(length * 2):
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
+                initial_byte = ord(await read(1))
+                async for item in major_decoders[initial_byte >> 5](initial_byte):
+                    yield item
 
-    def decode_tag(self, initial_byte):
-        value = self.decode_length(initial_byte)
+    async def decode_tag(self, initial_byte):
+        value = await self.decode_length(initial_byte)
         yield ContextTag(value)
-        initial_byte = ord(self.read(1))
-        yield from self._major_decoders[initial_byte >> 5](initial_byte)
+        initial_byte = ord(await self.read(1))
+        async for item in self._major_decoders[initial_byte >> 5](initial_byte):
+            yield item
 
-    def decode_simple(self, initial_byte):
+    async def decode_simple(self, initial_byte):
         # Pass initial_byte not length to detect ill-formed simples
         value = initial_byte & 0x1f
         if value < 20:
@@ -172,13 +197,13 @@ class CBORStreamDecoder:
         elif value < 24:
             yield CBORSimple.assigned_values[value]
         elif value == 24:
-            value = ord(self.read(1))
+            value = ord(await self.read(1))
             if value < 32:
                 raise BadSimpleError(f'simple value 0x{value:x} encoded with extra byte')
             yield self._simple_value(value)
         elif value < 28:
             length = 1 << (value - 24)
-            float_value, = be_float_unpackers[value - 25](self.read(length))
+            float_value, = be_float_unpackers[value - 25](await self.read(length))
             yield float_value
         elif value == 31:
             raise MisplacedBreakError('break code outside indefinite-length object')
@@ -193,18 +218,18 @@ class CBORStreamDecoder:
         if check_eof and self._read(1):
             raise UnconsumedDataError('not all input consumed')
 
-    def stream_sequence(self):
+    async def stream_sequence(self):
         major_decoders = self._major_decoders
         read = self.read
         while True:
             try:
-                initial_byte = ord(read(1))
+                initial_byte = ord(await read(1))
             except UnexpectedEOFError:
                 break
-            yield from major_decoders[initial_byte >> 5](initial_byte)
+            async for item in major_decoders[initial_byte >> 5](initial_byte):
+                yield item
 
 
-def streams_sequence(raw, **kwargs):
-    read = BytesIO(raw).read
+def streams_sequence(read, **kwargs):
     decoder = CBORStreamDecoder(read, **kwargs)
-    yield from decoder.stream_sequence()
+    return decoder.stream_sequence()

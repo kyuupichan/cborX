@@ -2,6 +2,7 @@ from array import array
 from collections import OrderedDict
 from io import BytesIO
 from itertools import count, takewhile
+from random import randrange
 import math
 import re
 
@@ -10,50 +11,62 @@ import pytest
 from cborx import *
 
 
-def handle_il_byte_string(item, item_gen, immutable):
-    items = (realize_one(item_gen, immutable) for _ in count())
-    parts = takewhile(lambda item: item is not Break, items)
+async def handle_il_byte_string(item, item_agen, immutable):
+    parts = []
+    while True:
+        part = await realize_one(item_agen, immutable)
+        if part is Break:
+            break
+        parts.append(part)
     return b''.join(parts)
 
 
-def handle_il_text_string(item, item_gen, immutable):
-    items = (realize_one(item_gen, immutable) for _ in count())
-    parts = takewhile(lambda item: item is not Break, items)
+async def handle_il_text_string(item, item_agen, immutable):
+    parts = []
+    while True:
+        part = await realize_one(item_agen, immutable)
+        if part is Break:
+            break
+        parts.append(part)
     return ''.join(parts)
 
 
-def handle_il_array(item, item_gen, immutable):
-    items = (realize_one(item_gen, immutable) for _ in count())
-    parts = takewhile(lambda item: item is not Break, items)
-    return tuple(parts) if immutable else list(parts)
+async def handle_il_array(item, item_agen, immutable):
+    items = []
+    while True:
+        item = await realize_one(item_agen, immutable)
+        if item is Break:
+            break
+        items.append(item)
+    return tuple(items) if immutable else items
 
 
-def handle_array(item, item_gen, immutable):
-    parts = (realize_one(item_gen, immutable) for _ in range(item.length))
-    return tuple(parts) if immutable else list(parts)
+async def handle_array(item, item_agen, immutable):
+    items = [await realize_one(item_agen, immutable) for _ in range(item.length)]
+    return tuple(items) if immutable else items
 
 
-def handle_il_map(item, item_gen, immutable):
-    def pairs():
-        while True:
-            key = realize_one(item_gen, True)
-            if key is Break:
-                break
-            yield key, realize_one(item_gen, immutable)
+async def handle_il_map(item, item_agen, immutable):
+    pairs = []
+    while True:
+        key = await realize_one(item_agen, True)
+        if key is Break:
+            break
+        pairs.append((key, await realize_one(item_agen, immutable)))
 
     kind = FrozenDict if immutable else dict
-    return kind(pairs())
+    return kind(pairs)
 
 
-def handle_map(item, item_gen, immutable):
-    pairs_gen = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
-                 for _ in range(item.length))
+async def handle_map(item, item_agen, immutable):
+    pairs = [(await realize_one(item_agen, True), await realize_one(item_agen, immutable))
+             for _ in range(item.length)]
     kind = FrozenDict if immutable else dict
-    return kind(pairs_gen)
+    return kind(pairs)
 
 
-def handle_tag(item, item_gen, immutable):
-    return CBORTag(item.value, realize_one(item_gen, immutable))
+async def handle_tag(item, item_agen, immutable):
+    return CBORTag(item.value, await realize_one(item_agen, immutable))
 
 
 context_handlers = {
@@ -67,19 +80,26 @@ context_handlers = {
 }
 
 
-def realize_one(item_gen, immutable):
-    item = next(item_gen)
+async def realize_one(item_agen, immutable):
+    item = await item_agen()
     handler = context_handlers.get(item.__class__)
     if handler:
-        return handler(item, item_gen, immutable)
+        return await handler(item, item_agen, immutable)
     return item
 
 
-def realize_top_one(raw):
-    item_gen = streams_sequence(raw)
-    item = realize_one(item_gen, False)
-    with pytest.raises(StopIteration):
-        next(item_gen)
+async def realize_stream(raw):
+    start = 0
+    async def read():
+        nonlocal start
+        length = randrange(1, 10)
+        start += length
+        return raw[start - length: start]
+
+    item_agen = streams_sequence(read).__anext__
+    item = await realize_one(item_agen, False)
+#    with pytest.raises(StopAsyncIteration):
+#        await item_agen
     return item
 
 
@@ -202,8 +222,9 @@ def test_well_formed_loads(encoding, expected):
 @pytest.mark.parametrize("encoding, expected",
                          [(test[0], test[1]) for test in singleton_tests],
                          ids = [test[2] for test in singleton_tests])
-def test_well_formed_streaming(encoding, expected):
-    result = realize_top_one(bytes.fromhex(encoding))
+@pytest.mark.asyncio
+async def test_well_formed_streaming(encoding, expected):
+    result = await realize_stream(bytes.fromhex(encoding))
     assert result == expected
 
 
@@ -220,8 +241,9 @@ tag_tests = [
 @pytest.mark.parametrize("encoding, expected",
                          [(test[0], test[1]) for test in tag_tests],
                          ids = [test[2] for test in tag_tests])
-def test_tag_streaming(encoding, expected):
-    result = realize_top_one(bytes.fromhex(encoding))
+@pytest.mark.asyncio
+async def test_tag_streaming(encoding, expected):
+    result = await realize_stream(bytes.fromhex(encoding))
     assert result == expected
 
 
@@ -285,9 +307,10 @@ def test_ill_formed(encoding, exception):
 @pytest.mark.parametrize("encoding, exception",
                          [(test[0], test[1]) for test in ill_formed_tests],
                          ids = [test[2] for test in ill_formed_tests])
-def test_ill_formed_streaming(encoding, exception):
+@pytest.mark.asyncio
+async def test_ill_formed_streaming(encoding, exception):
     with pytest.raises(exception):
-        realize_top_one(bytes.fromhex(encoding))
+        await realize_stream(bytes.fromhex(encoding))
 
 
 def test_decode_indefinite_length_text_string_split_utf8():
