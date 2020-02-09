@@ -27,7 +27,6 @@
 
 from collections import OrderedDict
 from collections.abc import Mapping
-from enum import IntEnum
 from functools import total_ordering
 from decimal import Decimal
 
@@ -43,7 +42,9 @@ __all__ = (
     'CBORError', 'EncodingError', 'DecodingError', 'IllFormedError', 'InvalidError',
     'BadInitialByteError', 'MisplacedBreakError', 'BadSimpleError', 'UnexpectedEOFError',
     'UnconsumedDataError', 'TagError', 'StringEncodingError',
-    'DuplicateKeyError', 'DeterministicError', 'ContextChange', 'ContextKind',
+    'DuplicateKeyError', 'DeterministicError',
+    'ContextBase', 'ContextILByteString', 'ContextILTextString', 'ContextILArray', 'ContextILMap',
+    'ContextArray', 'ContextMap', 'ContextTag',
 )
 
 # Exception class hierarchy:
@@ -333,18 +334,42 @@ class FrozenOrderedDict(FrozenDict):
     dict_class = OrderedDict
 
 
-class ContextKind(IntEnum):
-    BYTES = 0
-    TEXT = 1
-    LIST = 2
-    MAP = 3
-    TAG = 4
+class ContextBase:
+    pass
 
 
-@attr.s(slots=True, frozen=True)
-class ContextChange:
-    kind = attr.ib()
-    length = attr.ib()
+class ContextILByteString(ContextBase):
+    '''Represents the context of an indefinite-length byte string'''
 
-    def __repr__(self):
-        return f'ContextChange({self.kind}, {self.length})'
+
+class ContextILTextString(ContextBase):
+    '''Represents the context of an indefinite-length text string'''
+
+
+class ContextILArray(ContextBase):
+    '''Represents the context of an indefinite-length array'''
+
+
+class ContextILMap(ContextBase):
+    '''Represents the context of an indefinite-length map'''
+
+
+class ContextArray(ContextBase):
+    '''Represents the context of a fixed-length array'''
+
+    def __init__(self, length):
+        self.length = length
+
+
+class ContextMap(ContextBase):
+    '''Represents the context of a fixed-length map'''
+
+    def __init__(self, length):
+        self.length = length
+
+
+class ContextTag(ContextBase):
+    '''Represents the context of a tag'''
+
+    def __init__(self, value):
+        self.value = value

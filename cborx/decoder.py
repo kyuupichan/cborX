@@ -53,7 +53,8 @@ from cborx.types import (
     UnconsumedDataError, TagError, StringEncodingError, DuplicateKeyError,
     DeterministicError,
     FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat,
-    ContextChange, ContextKind, Break
+    ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
+    ContextArray, ContextMap, ContextTag, Break
 )
 from cborx.util import (
     datetime_from_enhanced_RFC3339_text, bjoin, sjoin, typed_array_decoder_hints
@@ -526,8 +527,8 @@ class CBORStreamDecoder:
             self.decode_negative_int,
             self.decode_byte_string,
             self.decode_text_string,
-            self.decode_list,
-            self.decode_dict,
+            self.decode_array,
+            self.decode_map,
             self.decode_tag,
             self.decode_simple
         )
@@ -565,7 +566,7 @@ class CBORStreamDecoder:
         length = self.decode_length(initial_byte)
         read = self.read
         if length is None:
-            yield ContextChange(ContextKind.BYTES, None)
+            yield ContextILByteString()
             decode_length = self.decode_length
             while True:
                 initial_byte = ord(read(1))
@@ -584,7 +585,7 @@ class CBORStreamDecoder:
         length = self.decode_length(initial_byte)
         read = self.read
         if length is None:
-            yield ContextChange(ContextKind.TEXT, None)
+            yield ContextILTextString()
             decode_length = self.decode_length
             while True:
                 initial_byte = ord(read(1))
@@ -599,12 +600,12 @@ class CBORStreamDecoder:
         else:
             yield decode_text(self.read(length))
 
-    def decode_list(self, initial_byte):
+    def decode_array(self, initial_byte):
         length = self.decode_length(initial_byte)
-        yield ContextChange(ContextKind.LIST, length)
         read = self.read
         major_decoders = self._major_decoders
         if length is None:
+            yield ContextILArray()
             while True:
                 initial_byte = ord(read(1))
                 if initial_byte == 0xff:
@@ -612,16 +613,17 @@ class CBORStreamDecoder:
                 yield from major_decoders[initial_byte >> 5](initial_byte)
             yield Break
         else:
+            yield ContextArray(length)
             for _ in range(length):
                 initial_byte = ord(read(1))
                 yield from major_decoders[initial_byte >> 5](initial_byte)
 
-    def decode_dict(self, initial_byte):
+    def decode_map(self, initial_byte):
         length = self.decode_length(initial_byte)
-        yield ContextChange(ContextKind.MAP, length)
         read = self.read
         major_decoders = self._major_decoders
         if length is None:
+            yield ContextILMap()
             while True:
                 initial_byte = ord(read(1))
                 if initial_byte == 0xff:
@@ -631,13 +633,14 @@ class CBORStreamDecoder:
                 yield from major_decoders[initial_byte >> 5](initial_byte)
             yield Break
         else:
+            yield ContextMap(length)
             for _ in range(length * 2):
                 initial_byte = ord(read(1))
                 yield from major_decoders[initial_byte >> 5](initial_byte)
 
     def decode_tag(self, initial_byte):
         value = self.decode_length(initial_byte)
-        yield ContextChange(ContextKind.TAG, value)
+        yield ContextTag(value)
         initial_byte = ord(self.read(1))
         yield from self._major_decoders[initial_byte >> 5](initial_byte)
 

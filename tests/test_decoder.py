@@ -10,42 +10,68 @@ import pytest
 from cborx import *
 
 
-def handle_context(item, item_gen, immutable):
-    if item.kind == ContextKind.MAP:
-        kind = FrozenDict if immutable else dict
-        if item.length is None:
-            def pairs():
-                while True:
-                    key = realize_one(item_gen, True)
-                    if key is Break:
-                        break
-                    yield key, realize_one(item_gen, immutable)
-            pairs_gen = pairs()
-        else:
-            pairs_gen = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
-                         for _ in range(item.length))
-        return kind(pairs_gen)
+def handle_il_byte_string(item, item_gen, immutable):
+    items = (realize_one(item_gen, immutable) for _ in count())
+    parts = takewhile(lambda item: item is not Break, items)
+    return b''.join(parts)
 
-    if item.length is None:
-        realized_items = (realize_one(item_gen, immutable) for _ in count())
-        parts = takewhile(lambda item: item is not Break, realized_items)
-    else:
-        parts = (realize_one(item_gen, immutable) for _ in range(item.length))
-    if item.kind == ContextKind.BYTES:
-        return b''.join(parts)
-    elif item.kind == ContextKind.TEXT:
-        return ''.join(parts)
-    elif item.kind == ContextKind.LIST:
-        return tuple(parts) if immutable else list(parts)
-    else:
-        assert item.kind == ContextKind.TAG
-        return CBORTag(item.length, realize_one(item_gen, immutable))
+
+def handle_il_text_string(item, item_gen, immutable):
+    items = (realize_one(item_gen, immutable) for _ in count())
+    parts = takewhile(lambda item: item is not Break, items)
+    return ''.join(parts)
+
+
+def handle_il_array(item, item_gen, immutable):
+    items = (realize_one(item_gen, immutable) for _ in count())
+    parts = takewhile(lambda item: item is not Break, items)
+    return tuple(parts) if immutable else list(parts)
+
+
+def handle_array(item, item_gen, immutable):
+    parts = (realize_one(item_gen, immutable) for _ in range(item.length))
+    return tuple(parts) if immutable else list(parts)
+
+
+def handle_il_map(item, item_gen, immutable):
+    def pairs():
+        while True:
+            key = realize_one(item_gen, True)
+            if key is Break:
+                break
+            yield key, realize_one(item_gen, immutable)
+
+    kind = FrozenDict if immutable else dict
+    return kind(pairs())
+
+
+def handle_map(item, item_gen, immutable):
+    pairs_gen = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
+                 for _ in range(item.length))
+    kind = FrozenDict if immutable else dict
+    return kind(pairs_gen)
+
+
+def handle_tag(item, item_gen, immutable):
+    return CBORTag(item.value, realize_one(item_gen, immutable))
+
+
+context_handlers = {
+    ContextILByteString: handle_il_byte_string,
+    ContextILTextString: handle_il_text_string,
+    ContextILArray: handle_il_array,
+    ContextArray: handle_array,
+    ContextILMap: handle_il_map,
+    ContextMap: handle_map,
+    ContextTag: handle_tag,
+}
 
 
 def realize_one(item_gen, immutable):
     item = next(item_gen)
-    if isinstance(item, ContextChange):
-        return handle_context(item, item_gen, immutable)
+    handler = context_handlers.get(item.__class__)
+    if handler:
+        return handler(item, item_gen, immutable)
     return item
 
 
