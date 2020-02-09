@@ -83,7 +83,7 @@ def realize_top_one(raw):
     return item
 
 
-# econding, expected, id
+# encoding, expected, id
 singleton_tests = [
     # mt-0 unsigned integers
     ('00', 0, '0'),
@@ -207,6 +207,7 @@ def test_well_formed_streaming(encoding, expected):
     assert result == expected
 
 
+# encoding, expected, id
 tag_tests = [
     ('c000', CBORTag(0, 0), 'Tag 0'),
     ('d020', CBORTag(16, -1), 'Tag 16'),
@@ -222,6 +223,71 @@ tag_tests = [
 def test_tag_streaming(encoding, expected):
     result = realize_top_one(bytes.fromhex(encoding))
     assert result == expected
+
+
+bad_initial_bytes = (
+    '1c', '1d', '1e', '1f',
+    '3c', '3d', '3e', '3f',
+    '5c', '5d', '5e',
+    '7c', '7d', '7e',
+    '9c', '9d', '9e',
+    'bc', 'bd', 'be',
+    'dc', 'dd', 'de', 'df',
+    'fc', 'fd', 'fe',
+)
+
+truncated_encodings = (
+    '18', '1900', '1a000000', '1b00000000000000',  # length truncated
+    '38', '3900', '3a000000', '3b00000000000000',  # length truncated
+    '58', '5900', '5a000000', '5b00000000000000',  # length truncated
+    '5801', '590001', '5a00000001', '5b0000000000000001',  # payload truncated
+    '5f',   '5f5100', # missing break
+    '78', '7900', '7a000000', '7b00000000000000',  # length truncated
+    '7801', '790001', '7a00000001', '7b0000000000000001',  # payload truncated
+    '7f',  '7f7100',  # missing break
+    '98', '9900', '9a000000', '9b00000000000000',
+    '9801', '990001', '9a00000001', '9b0000000000000001',  # missing item
+    '9f',   '9f00',  # missing break
+    'b8', 'b900', 'ba000000', 'bb00000000000000',
+    'b801', 'b90001', 'ba00000001', 'bb0000000000000001',  # missing key-value pair
+    'b80100', 'b9000100', 'ba0000000100', 'bb000000000000000100',  # missing value
+    'bf',   'bf00', 'bf0000',  # missing break
+    'd8', 'd900', 'da000000', 'db00000000000000',  # value truncated
+    'f8',  # missing simple value
+)
+
+misplaced_breaks = (
+    ('8301ff03', 'definite length list'),
+    ('9f018202ff', 'definite in indefinite length list'),
+    ('a1ff', 'definite map key'),
+    ('a100ff', 'definite map value'),
+    ('bf00ff', 'indefinite map value'),
+    ('d0ff', 'in tag'),
+    ('ff', 'top level'),
+)
+
+# encoding, exception, id
+ill_formed_tests = [(encoding, BadInitialByteError, encoding) for encoding in bad_initial_bytes]
+ill_formed_tests.extend((f'f8{n:02x}', BadSimpleError, f'bad-simple-{n}') for n in range(32))
+ill_formed_tests.extend((encoding, UnexpectedEOFError, encoding)
+                        for encoding in truncated_encodings)
+ill_formed_tests.extend((encoding, MisplacedBreakError, f'misplaced-break {id_}')
+                        for encoding, id_ in misplaced_breaks)
+
+@pytest.mark.parametrize("encoding, exception",
+                         [(test[0], test[1]) for test in ill_formed_tests],
+                         ids = [test[2] for test in ill_formed_tests])
+def test_ill_formed(encoding, exception):
+    with pytest.raises(exception):
+        loads(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding, exception",
+                         [(test[0], test[1]) for test in ill_formed_tests],
+                         ids = [test[2] for test in ill_formed_tests])
+def test_ill_formed_streaming(encoding, exception):
+    with pytest.raises(exception):
+        realize_top_one(bytes.fromhex(encoding))
 
 
 def test_decode_indefinite_length_text_string_split_utf8():
@@ -242,24 +308,6 @@ def test_decode_indefinite_length_dict(value, expected):
 @pytest.mark.parametrize("encoding", ['f97e00', 'fa7fc00000', 'fb7ff8000000000000'])
 def test_decode_nan(encoding):
     assert math.isnan(loads(bytes.fromhex(encoding)))
-
-
-@pytest.mark.parametrize("encoding", [
-    'ff',
-    '8301ff03',
-    'a1ff',
-    'a100ff',
-    'bf00ff',
-], ids = [
-    'lone break',
-    'definite length list',
-    'definite map key',
-    'definite map value',
-    'indefinite map value',
-])
-def test_misplaced_break(encoding):
-    with pytest.raises(MisplacedBreakError):
-        loads(bytes.fromhex(encoding))
 
 
 @pytest.mark.parametrize("encoding", [
@@ -342,44 +390,6 @@ def test_duplicate_keys_int_vs_bignum():
 ])
 def test_bad_il_byte_string(encoding):
     with pytest.raises(BadInitialByteError, match='in indefinite-length byte string'):
-        loads(bytes.fromhex(encoding))
-
-
-@pytest.mark.parametrize("encoding", [
-    '1c', '1d', '1e', '1f',
-    '3c', '3d', '3e', '3f',
-    '5c', '5d', '5e',
-    '7c', '7d', '7e',
-    '9c', '9d', '9e',
-    'bc', 'bd', 'be',
-    # 'dc', 'dd', 'de', 'df',
-    'fc', 'fd', 'fe',
-])
-def test_unassigned(encoding):
-    with pytest.raises(BadInitialByteError, match='bad initial byte 0x'):
-        loads(bytes.fromhex(encoding))
-
-
-@pytest.mark.parametrize("encoding", [
-    '18', '1900', '1a000000', '1b00000000000000',  # length truncated
-    '38', '3900', '3a000000', '3b00000000000000',  # length truncated
-    '58', '5900', '5a000000', '5b00000000000000',  # length truncated
-    '5801', '590001', '5a00000001', '5b0000000000000001',  # payload truncated
-    '5f',   # missing byte string
-    '78', '7900', '7a000000', '7b00000000000000',  # length truncated
-    '7801', '790001', '7a00000001', '7b0000000000000001',  # payload truncated
-    '7f',   # missing text string
-    '98', '9900', '9a000000', '9b00000000000000',
-    '9801', '990001', '9a00000001', '9b0000000000000001',  # missing item
-    '9f',   # missing item
-    'b8', 'b900', 'ba000000', 'bb00000000000000',
-    'b801', 'b90001', 'ba00000001', 'bb0000000000000001',  # missing key-value pair
-    'b80100', 'b9000100', 'ba0000000100', 'bb000000000000000100',  # missing value
-    'bf',   'bf00',
-    'f8',  # missing payload
-])
-def test_truncated(encoding):
-    with pytest.raises(UnexpectedEOFError, match='need '):
         loads(bytes.fromhex(encoding))
 
 
@@ -639,12 +649,6 @@ def test_retain_bignums(retain, cls):
     assert isinstance(value, cls)
 
 
-@pytest.mark.parametrize("encoding", ['f800', 'f81f'])
-def test_invalid_simple(encoding):
-    with pytest.raises(BadSimpleError, match='simple value 0x'):
-        loads(bytes.fromhex(encoding))
-
-
 def my_simple_value(value):
     if value == 2:
         return Ellipsis
@@ -709,19 +713,13 @@ def test_non_deterministic(encoding, deterministic, match):
     with pytest.raises(DeterministicError, match=match):
         loads(bytes.fromhex(encoding), deterministic=deterministic)
 
-@pytest.mark.parametrize("encoding, bad", [
-    # This must raise a BadSimpleError as that is ill-formed, not just invalid
-    ('f817', True),
+@pytest.mark.parametrize("encoding", [
     # These are floats
-    ('fa0000ffff', False),
-    ('fb0000000000000000', False),
+    'fa0000ffff',
+    'fb0000000000000000',
 ])
-def test_non_deterministic_simples(encoding, bad):
-    if bad:
-        with pytest.raises(BadSimpleError):
-            loads(bytes.fromhex(encoding), deterministic=DeterministicFlags.LENGTH)
-    else:
-        loads(bytes.fromhex(encoding), deterministic=DeterministicFlags.LENGTH)
+def test_non_deterministic_simples(encoding):
+    loads(bytes.fromhex(encoding), deterministic=DeterministicFlags.LENGTH)
 
 
 def test_check_eof_false():
