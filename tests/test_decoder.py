@@ -295,16 +295,6 @@ def test_decode_indefinite_length_text_string_split_utf8():
         loads(bytes.fromhex('7f 61e3 628182 ff'))
 
 
-@pytest.mark.parametrize("value, expected", (
-    (CBORILDict(iter( [((1, 2), (3, 4))])), {(1, 2): [3, 4]}),
-
-))
-def test_decode_indefinite_length_dict(value, expected):
-    encoding = dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False)
-    result = loads(encoding)
-    assert result == expected
-
-
 @pytest.mark.parametrize("encoding", ['f97e00', 'fa7fc00000', 'fb7ff8000000000000'])
 def test_decode_nan(encoding):
     assert math.isnan(loads(bytes.fromhex(encoding)))

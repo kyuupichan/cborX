@@ -56,11 +56,7 @@ class CBORStreamDecoder:
             self.decode_tag,
             self.decode_simple
         )
-        self._pending_id = None
         self._simple_value = simple_value or CBORSimple
-        self._shared_id = itertools.count()
-        self._shared_ids = {}
-        self._flags = 0
 
     def read(self, n):
         result = self._read(n)
