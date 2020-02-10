@@ -28,6 +28,7 @@
 from collections import OrderedDict
 from collections.abc import Mapping
 from functools import total_ordering
+from itertools import count, takewhile
 from decimal import Decimal
 
 import attr
@@ -335,6 +336,11 @@ class FrozenOrderedDict(FrozenDict):
     dict_class = OrderedDict
 
 
+def realize_one(item_gen, immutable):
+    item = next(item_gen)
+    return item.realize(item_gen, immutable) if isinstance(item, ContextBase) else item
+
+
 class ContextBase:
     pass
 
@@ -342,17 +348,36 @@ class ContextBase:
 class ContextILByteString(ContextBase):
     '''Represents the context of an indefinite-length byte string'''
 
+    def realize(self, item_gen, immutable):
+        return bjoin(takewhile(lambda item: item is not Break, item_gen))
+
 
 class ContextILTextString(ContextBase):
     '''Represents the context of an indefinite-length text string'''
+
+    def realize(self, item_gen, immutable):
+        return sjoin(takewhile(lambda item: item is not Break, item_gen))
 
 
 class ContextILArray(ContextBase):
     '''Represents the context of an indefinite-length array'''
 
+    def realize(self, item_gen, immutable):
+        items = (realize_one(item_gen, immutable) for _ in count())
+        items = takewhile(lambda item: item is not Break, items)
+        cls = tuple if immutable else list
+        return cls(items)
+
 
 class ContextILMap(ContextBase):
     '''Represents the context of an indefinite-length map'''
+
+    def realize(self, item_gen, immutable):
+        keys = (realize_one(item_gen, True) for _ in count())
+        keys = takewhile(lambda key: key is not Break, keys)
+        pairs = ((key, realize_one(item_gen, immutable)) for key in keys)
+        cls = FrozenDict if immutable else dict
+        return cls(pairs)
 
 
 class ContextArray(ContextBase):
@@ -361,6 +386,11 @@ class ContextArray(ContextBase):
     def __init__(self, length):
         self.length = length
 
+    def realize(self, item_gen, immutable):
+        items = (realize_one(item_gen, immutable) for _ in range(self.length))
+        cls = tuple if immutable else list
+        return cls(items)
+
 
 class ContextMap(ContextBase):
     '''Represents the context of a fixed-length map'''
@@ -368,9 +398,18 @@ class ContextMap(ContextBase):
     def __init__(self, length):
         self.length = length
 
+    def realize(self, item_gen, immutable):
+        pairs = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
+                 for _ in range(self.length))
+        cls = FrozenDict if immutable else dict
+        return cls(pairs)
+
 
 class ContextTag(ContextBase):
     '''Represents the context of a tag'''
 
     def __init__(self, value):
         self.value = value
+
+    def realize(self, item_gen, immutable):
+        return CBORTag(self.value, realize_one(item_gen, immutable))

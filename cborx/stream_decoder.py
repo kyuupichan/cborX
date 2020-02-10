@@ -39,7 +39,7 @@ from cborx.types import (
     ContextArray, ContextMap, ContextTag, Break, CBORSimple,
     StringEncodingError,
 )
-from cborx.util import bjoin, raise_error
+from cborx.util import bjoin, sjoin, raise_error
 
 
 
@@ -69,8 +69,7 @@ def buffered_read(read):
 class AsyncStreamDecoder:
     '''Decodes CBOR-encoded data delivered asynchronously as a stream'''
 
-    def __init__(self, read, *, string_errors='strict', simple_value=None,
-                 on_error=raise_error):
+    def __init__(self, read, *, string_errors='strict', simple_value=None, on_error=None):
         self._major_decoders = (
             self.decode_unsigned_int,
             self.decode_negative_int,
@@ -232,12 +231,10 @@ def astreams_sequence(read, **kwargs):
     return decoder.stream_sequence()
 
 
-
 class StreamDecoder:
     '''Decodes CBOR-encoded data delivered synchronously as a stream'''
 
-    def __init__(self, read, *, string_errors='strict', simple_value=None,
-                 on_error=None):
+    def __init__(self, read, *, string_errors='strict', simple_value=None, on_error=None):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
