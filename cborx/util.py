@@ -67,6 +67,10 @@ def uint_to_be_bytes(value):
     return value.to_bytes((value.bit_length() + 7) // 8, 'big')
 
 
+def raise_error(exception_obj):
+    raise exception_obj
+
+
 def _analyze_array_tags(base_tag_value):
     '''Determine dynamically for the host machine a map from Python typecodes to tag values,
     and from tag values to decoder instructions.

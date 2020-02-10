@@ -91,7 +91,7 @@ async def arealize_one(item_agen, immutable):
     return item
 
 
-async def arealize_stream(raw):
+async def arealize_stream(raw, **kwargs):
     start = 0
     async def read():
         nonlocal start
@@ -99,7 +99,7 @@ async def arealize_stream(raw):
         start += length
         return raw[start - length: start]
 
-    item_agen = astreams_sequence(read).__anext__
+    item_agen = astreams_sequence(read, **kwargs).__anext__
     item = await arealize_one(item_agen, False)
 #    with pytest.raises(StopAsyncIteration):
 #        await item_agen
@@ -174,8 +174,8 @@ def srealize_one(item_gen, immutable):
     return item
 
 
-def srealize_stream(raw):
-    item_gen = streams_sequence(raw)
+def srealize_stream(raw, **kwargs):
+    item_gen = streams_sequence(raw, **kwargs)
     item = srealize_one(item_gen, False)
     with pytest.raises(StopIteration):
         next(item_gen)
@@ -416,16 +416,71 @@ async def test_ill_formed_astreaming(encoding, exception):
         await arealize_stream(bytes.fromhex(encoding))
 
 
-def test_decode_indefinite_length_text_string_split_utf8():
-    with pytest.raises(StringEncodingError):
-        loads(bytes.fromhex('7f 61e3 628182 ff'))
+def invalid_utf8_error(error):
+    assert type(error) is StringEncodingError
+    assert error.args == (bytes.fromhex('80616263'), )
+    return 'dog'
+
+invalid_utf8_tests = [
+    # c3b1 is an invalid UTF-8 2-octet sequence, so this is c-a-invalid-t
+    ('6480616263', 'strict', invalid_utf8_error, 'dog', 'utf8-1'),
+    ('6480616263', 'strict', None, StringEncodingError(bytes.fromhex('80616263')), 'utf8-2'),
+    ('6480616263', 'ignore', None, 'abc', 'utf8-3'),
+    ('6480616263', 'replace', None, '\ufffdabc', 'utf8-4'),
+]
+
+@pytest.mark.parametrize("encoding, string_errors, on_error, expected",
+                         [tuple(test[:-1]) for test in invalid_utf8_tests],
+                         ids = [test[-1] for test in invalid_utf8_tests])
+def test_invalid_utf8(encoding, string_errors, on_error, expected):
+    encoding = bytes.fromhex(encoding)
+    kwargs = {'string_errors': string_errors, 'on_error': on_error}
+    if string_errors == 'strict' and on_error is None:
+        with pytest.raises(StringEncodingError) as excinfo:
+            loads(encoding, **kwargs)
+        assert excinfo.type is type(expected)
+        assert excinfo.value.args == expected.args
+    else:
+        result = loads(encoding, **kwargs)
+        assert result == expected
 
 
+@pytest.mark.parametrize("encoding, string_errors, on_error, expected",
+                         [tuple(test[:-1]) for test in invalid_utf8_tests],
+                         ids = [test[-1] for test in invalid_utf8_tests])
+@pytest.mark.asyncio
+async def test_invalid_utf8_astreaming(encoding, string_errors, on_error, expected):
+    encoding = bytes.fromhex(encoding)
+    kwargs = {'string_errors': string_errors, 'on_error': on_error}
+    if string_errors == 'strict' and on_error is None:
+        with pytest.raises(StringEncodingError) as excinfo:
+            await arealize_stream(encoding, **kwargs)
+        assert excinfo.type is type(expected)
+        assert excinfo.value.args == expected.args
+    else:
+        result = await arealize_stream(encoding, **kwargs)
+        assert result == expected
 
 
+@pytest.mark.parametrize("encoding, string_errors, on_error, expected",
+                         [tuple(test[:-1]) for test in invalid_utf8_tests],
+                         ids = [test[-1] for test in invalid_utf8_tests])
+def test_invalid_utf8_streaming(encoding, string_errors, on_error, expected):
+    encoding = bytes.fromhex(encoding)
+    kwargs = {'string_errors': string_errors, 'on_error': on_error}
+    if string_errors == 'strict' and on_error is None:
+        with pytest.raises(StringEncodingError) as excinfo:
+            srealize_stream(encoding, **kwargs)
+        assert excinfo.type is type(expected)
+        assert excinfo.value.args == expected.args
+    else:
+        result = srealize_stream(encoding, **kwargs)
+        assert result == expected
 
 
-
+#def test_decode_indefinite_length_text_string_split_utf8():
+#    with pytest.raises(StringEncodingError):
+#        loads(bytes.fromhex('7f 61e3 628182 ff'))
 
 
 

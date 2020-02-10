@@ -38,6 +38,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from enum import IntEnum
 from fractions import Fraction
+from functools import partial
 from io import BytesIO
 from ipaddress import ip_address, ip_network
 from uuid import UUID
@@ -52,7 +53,7 @@ from cborx.types import (
     FrozenDict, FrozenOrderedDict, CBORSimple, CBORTag, BigNum, BigFloat,
 )
 from cborx.util import (
-    datetime_from_enhanced_RFC3339_text, bjoin, sjoin, typed_array_decoder_hints
+    datetime_from_enhanced_RFC3339_text, bjoin, sjoin, typed_array_decoder_hints, raise_error,
 )
 
 
@@ -95,17 +96,20 @@ default_tag_decoders.update({tag_value: 'decode_typed_array' for tag_value
                              in typed_array_decoder_hints})
 
 
-def decode_text(raw_utf8):
+def decode_text(errors, on_error, raw_utf8):
     try:
-        return raw_utf8.decode()
+        return raw_utf8.decode(errors=errors)
     except UnicodeDecodeError:
-        raise StringEncodingError('invalid string encoding')
+        result = on_error(StringEncodingError(raw_utf8))
+        assert isinstance(result, str)
+        return result
 
 
 class CBORDecoder:
     '''Decodes CBOR-encoded data'''
 
-    def __init__(self, read, *, retain_bignums=False, tag_decoders=None, simple_value=None,
+    def __init__(self, read, *, retain_bignums=False, tag_decoders=None,
+                 string_errors='strict', simple_value=None, on_error=None,
                  check_eof=True, deterministic=DeterministicFlags.NONE):
         self._read = read
         self._major_decoders = (
@@ -129,6 +133,8 @@ class CBORDecoder:
         self._simple_value = simple_value or CBORSimple
         self._check_eof = check_eof
         self._deterministic = deterministic
+        on_error = on_error or raise_error
+        self._decode_text = partial(decode_text, string_errors, on_error)
 
     @contextmanager
     def flags_set(self, mask):
@@ -213,7 +219,7 @@ class CBORDecoder:
             if self._deterministic & DeterministicFlags.REALIZE_IL:
                 raise DeterministicError(f'indeterminate-length text string')
             return sjoin(self._text_string_parts())
-        return decode_text(self.read(length))
+        return self._decode_text(self.read(length))
 
     def _list_parts(self):
         read = self.read

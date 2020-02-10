@@ -59,8 +59,8 @@ __all__ = (
 #       UnexpectedEOFError
 #       UnconsumedDataError
 #     InvalidError
-#       TagError
 #       StringEncodingError
+#       TagError
 #       DuplicateKeyError
 #       DeterministicError
 
@@ -112,7 +112,8 @@ class TagError(InvalidError):
 
 
 class StringEncodingError(InvalidError):
-    '''Indicates a string which could not be decoded to UTF-8'''
+    '''Indicates a string which could not be decoded to UTF-8.  The invalid UTF-8 bytes
+    are the first argument.'''
 
 
 class DuplicateKeyError(InvalidError):

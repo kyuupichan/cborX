@@ -28,6 +28,7 @@
 __all__ = ('astreams_sequence', 'streams_sequence', )
 
 
+from functools import partial
 from io import BytesIO
 
 from cborx.decoder import decode_text
@@ -35,9 +36,10 @@ from cborx.packing import uint_unpackers, be_float_unpackers
 from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
     ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
-    ContextArray, ContextMap, ContextTag, Break, CBORSimple
+    ContextArray, ContextMap, ContextTag, Break, CBORSimple,
+    StringEncodingError,
 )
-from cborx.util import bjoin
+from cborx.util import bjoin, raise_error
 
 
 
@@ -67,7 +69,8 @@ def buffered_read(read):
 class AsyncStreamDecoder:
     '''Decodes CBOR-encoded data delivered asynchronously as a stream'''
 
-    def __init__(self, read, simple_value=None):
+    def __init__(self, read, *, string_errors='strict', simple_value=None,
+                 on_error=raise_error):
         self._major_decoders = (
             self.decode_unsigned_int,
             self.decode_negative_int,
@@ -80,6 +83,8 @@ class AsyncStreamDecoder:
         )
         self.read = buffered_read(read)
         self._simple_value = simple_value or CBORSimple
+        on_error = on_error or raise_error
+        self._decode_text = partial(decode_text, string_errors, on_error)
 
     async def decode_length(self, initial_byte):
         minor = initial_byte & 0x1f
@@ -127,7 +132,7 @@ class AsyncStreamDecoder:
             while True:
                 initial_byte = ord(await read(1))
                 if 0x60 <= initial_byte < 0x7c:
-                    yield decode_text(await read(await decode_length(initial_byte)))
+                    yield self._decode_text(await read(await decode_length(initial_byte)))
                 elif initial_byte == 0xff:
                     break
                 else:
@@ -135,7 +140,7 @@ class AsyncStreamDecoder:
                                               f'indefinite-length byte string')
             yield Break
         else:
-            yield decode_text(await self.read(length))
+            yield self._decode_text(await self.read(length))
 
     async def decode_array(self, initial_byte):
         length = await self.decode_length(initial_byte)
@@ -231,7 +236,8 @@ def astreams_sequence(read, **kwargs):
 class StreamDecoder:
     '''Decodes CBOR-encoded data delivered synchronously as a stream'''
 
-    def __init__(self, read, simple_value=None):
+    def __init__(self, read, *, string_errors='strict', simple_value=None,
+                 on_error=None):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -244,6 +250,8 @@ class StreamDecoder:
             self.decode_simple
         )
         self._simple_value = simple_value or CBORSimple
+        on_error = on_error or raise_error
+        self._decode_text = partial(decode_text, string_errors, on_error)
 
     def read(self, n):
         result = self._read(n)
@@ -297,7 +305,7 @@ class StreamDecoder:
             while True:
                 initial_byte = ord(read(1))
                 if 0x60 <= initial_byte < 0x7c:
-                    yield decode_text(read(decode_length(initial_byte)))
+                    yield self._decode_text(read(decode_length(initial_byte)))
                 elif initial_byte == 0xff:
                     break
                 else:
@@ -305,7 +313,7 @@ class StreamDecoder:
                                               f'indefinite-length byte string')
             yield Break
         else:
-            yield decode_text(self.read(length))
+            yield self._decode_text(self.read(length))
 
     def decode_array(self, initial_byte):
         length = self.decode_length(initial_byte)
