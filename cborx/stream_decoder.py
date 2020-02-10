@@ -28,14 +28,12 @@
 __all__ = ('astreams_sequence', 'streams_sequence', )
 
 
-import itertools
 from io import BytesIO
 
 from cborx.decoder import decode_text
 from cborx.packing import uint_unpackers, be_float_unpackers
 from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
-    UnconsumedDataError,
     ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
     ContextArray, ContextMap, ContextTag, Break, CBORSimple
 )
@@ -212,12 +210,6 @@ class AsyncStreamDecoder:
 
     # External API
 
-    def stream_one(self, check_eof=True):
-        initial_byte = ord(self.read(1))
-        yield from self._major_decoders[initial_byte >> 5](initial_byte)
-        if check_eof and self._read(1):
-            raise UnconsumedDataError('not all input consumed')
-
     async def stream_sequence(self):
         major_decoders = self._major_decoders
         read = self.read
@@ -381,12 +373,6 @@ class StreamDecoder:
             raise BadInitialByteError(f'bad initial byte 0x{initial_byte:x}')
 
     # External API
-
-    def stream_one(self, check_eof=True):
-        initial_byte = ord(self.read(1))
-        yield from self._major_decoders[initial_byte >> 5](initial_byte)
-        if check_eof and self._read(1):
-            raise UnconsumedDataError('not all input consumed')
 
     def stream_sequence(self):
         major_decoders = self._major_decoders
