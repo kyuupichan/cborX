@@ -10,85 +10,88 @@ import pytest
 
 from cborx import *
 
+#
+# Helpers for async streaming tests
+#
 
-async def handle_il_byte_string(item, item_agen, immutable):
+async def ahandle_il_byte_string(item, item_agen, immutable):
     parts = []
     while True:
-        part = await realize_one(item_agen, immutable)
+        part = await arealize_one(item_agen, immutable)
         if part is Break:
             break
         parts.append(part)
     return b''.join(parts)
 
 
-async def handle_il_text_string(item, item_agen, immutable):
+async def ahandle_il_text_string(item, item_agen, immutable):
     parts = []
     while True:
-        part = await realize_one(item_agen, immutable)
+        part = await arealize_one(item_agen, immutable)
         if part is Break:
             break
         parts.append(part)
     return ''.join(parts)
 
 
-async def handle_il_array(item, item_agen, immutable):
+async def ahandle_il_array(item, item_agen, immutable):
     items = []
     while True:
-        item = await realize_one(item_agen, immutable)
+        item = await arealize_one(item_agen, immutable)
         if item is Break:
             break
         items.append(item)
     return tuple(items) if immutable else items
 
 
-async def handle_array(item, item_agen, immutable):
-    items = [await realize_one(item_agen, immutable) for _ in range(item.length)]
+async def ahandle_array(item, item_agen, immutable):
+    items = [await arealize_one(item_agen, immutable) for _ in range(item.length)]
     return tuple(items) if immutable else items
 
 
-async def handle_il_map(item, item_agen, immutable):
+async def ahandle_il_map(item, item_agen, immutable):
     pairs = []
     while True:
-        key = await realize_one(item_agen, True)
+        key = await arealize_one(item_agen, True)
         if key is Break:
             break
-        pairs.append((key, await realize_one(item_agen, immutable)))
+        pairs.append((key, await arealize_one(item_agen, immutable)))
 
     kind = FrozenDict if immutable else dict
     return kind(pairs)
 
 
-async def handle_map(item, item_agen, immutable):
-    pairs = [(await realize_one(item_agen, True), await realize_one(item_agen, immutable))
+async def ahandle_map(item, item_agen, immutable):
+    pairs = [(await arealize_one(item_agen, True), await arealize_one(item_agen, immutable))
              for _ in range(item.length)]
     kind = FrozenDict if immutable else dict
     return kind(pairs)
 
 
-async def handle_tag(item, item_agen, immutable):
-    return CBORTag(item.value, await realize_one(item_agen, immutable))
+async def ahandle_tag(item, item_agen, immutable):
+    return CBORTag(item.value, await arealize_one(item_agen, immutable))
 
 
-context_handlers = {
-    ContextILByteString: handle_il_byte_string,
-    ContextILTextString: handle_il_text_string,
-    ContextILArray: handle_il_array,
-    ContextArray: handle_array,
-    ContextILMap: handle_il_map,
-    ContextMap: handle_map,
-    ContextTag: handle_tag,
+context_ahandlers = {
+    ContextILByteString: ahandle_il_byte_string,
+    ContextILTextString: ahandle_il_text_string,
+    ContextILArray: ahandle_il_array,
+    ContextArray: ahandle_array,
+    ContextILMap: ahandle_il_map,
+    ContextMap: ahandle_map,
+    ContextTag: ahandle_tag,
 }
 
 
-async def realize_one(item_agen, immutable):
+async def arealize_one(item_agen, immutable):
     item = await item_agen()
-    handler = context_handlers.get(item.__class__)
+    handler = context_ahandlers.get(item.__class__)
     if handler:
         return await handler(item, item_agen, immutable)
     return item
 
 
-async def realize_stream(raw):
+async def arealize_stream(raw):
     start = 0
     async def read():
         nonlocal start
@@ -97,9 +100,85 @@ async def realize_stream(raw):
         return raw[start - length: start]
 
     item_agen = astreams_sequence(read).__anext__
-    item = await realize_one(item_agen, False)
+    item = await arealize_one(item_agen, False)
 #    with pytest.raises(StopAsyncIteration):
 #        await item_agen
+    return item
+
+#
+# Helpers for sync streaming tests
+#
+
+def shandle_il_byte_string(item, item_gen, immutable):
+    items = (srealize_one(item_gen, immutable) for _ in count())
+    parts = takewhile(lambda item: item is not Break, items)
+    return b''.join(parts)
+
+
+def shandle_il_text_string(item, item_gen, immutable):
+    items = (srealize_one(item_gen, immutable) for _ in count())
+    parts = takewhile(lambda item: item is not Break, items)
+    return ''.join(parts)
+
+
+def shandle_il_array(item, item_gen, immutable):
+    items = (srealize_one(item_gen, immutable) for _ in count())
+    parts = takewhile(lambda item: item is not Break, items)
+    return tuple(parts) if immutable else list(parts)
+
+
+def shandle_array(item, item_gen, immutable):
+    parts = (srealize_one(item_gen, immutable) for _ in range(item.length))
+    return tuple(parts) if immutable else list(parts)
+
+
+def shandle_il_map(item, item_gen, immutable):
+    def pairs():
+        while True:
+            key = srealize_one(item_gen, True)
+            if key is Break:
+                break
+            yield key, srealize_one(item_gen, immutable)
+
+    kind = FrozenDict if immutable else dict
+    return kind(pairs())
+
+
+def shandle_map(item, item_gen, immutable):
+    pairs_gen = ((srealize_one(item_gen, True), srealize_one(item_gen, immutable))
+                 for _ in range(item.length))
+    kind = FrozenDict if immutable else dict
+    return kind(pairs_gen)
+
+
+def shandle_tag(item, item_gen, immutable):
+    return CBORTag(item.value, srealize_one(item_gen, immutable))
+
+
+context_shandlers = {
+    ContextILByteString: shandle_il_byte_string,
+    ContextILTextString: shandle_il_text_string,
+    ContextILArray: shandle_il_array,
+    ContextArray: shandle_array,
+    ContextILMap: shandle_il_map,
+    ContextMap: shandle_map,
+    ContextTag: shandle_tag,
+}
+
+
+def srealize_one(item_gen, immutable):
+    item = next(item_gen)
+    handler = context_shandlers.get(item.__class__)
+    if handler:
+        return handler(item, item_gen, immutable)
+    return item
+
+
+def srealize_stream(raw):
+    item_gen = streams_sequence(raw)
+    item = srealize_one(item_gen, False)
+    with pytest.raises(StopIteration):
+        next(item_gen)
     return item
 
 
@@ -222,13 +301,21 @@ def test_well_formed_loads(encoding, expected):
 @pytest.mark.parametrize("encoding, expected",
                          [(test[0], test[1]) for test in singleton_tests],
                          ids = [test[2] for test in singleton_tests])
-@pytest.mark.asyncio
-async def test_well_formed_streaming(encoding, expected):
-    result = await realize_stream(bytes.fromhex(encoding))
+def test_well_formed_streaming(encoding, expected):
+    result = srealize_stream(bytes.fromhex(encoding))
     assert result == expected
 
 
-# encoding, expected, id
+@pytest.mark.parametrize("encoding, expected",
+                         [(test[0], test[1]) for test in singleton_tests],
+                         ids = [test[2] for test in singleton_tests])
+@pytest.mark.asyncio
+async def test_well_formed_astreaming(encoding, expected):
+    result = await arealize_stream(bytes.fromhex(encoding))
+    assert result == expected
+
+
+# Encoding, expected, id
 tag_tests = [
     ('c000', CBORTag(0, 0), 'Tag 0'),
     ('d020', CBORTag(16, -1), 'Tag 16'),
@@ -241,9 +328,17 @@ tag_tests = [
 @pytest.mark.parametrize("encoding, expected",
                          [(test[0], test[1]) for test in tag_tests],
                          ids = [test[2] for test in tag_tests])
+def test_tag_streaming(encoding, expected):
+    result = srealize_stream(bytes.fromhex(encoding))
+    assert result == expected
+
+
+@pytest.mark.parametrize("encoding, expected",
+                         [(test[0], test[1]) for test in tag_tests],
+                         ids = [test[2] for test in tag_tests])
 @pytest.mark.asyncio
-async def test_tag_streaming(encoding, expected):
-    result = await realize_stream(bytes.fromhex(encoding))
+async def test_tag_astreaming(encoding, expected):
+    result = await arealize_stream(bytes.fromhex(encoding))
     assert result == expected
 
 
@@ -307,15 +402,31 @@ def test_ill_formed(encoding, exception):
 @pytest.mark.parametrize("encoding, exception",
                          [(test[0], test[1]) for test in ill_formed_tests],
                          ids = [test[2] for test in ill_formed_tests])
-@pytest.mark.asyncio
-async def test_ill_formed_streaming(encoding, exception):
+def test_ill_formed_streaming(encoding, exception):
     with pytest.raises(exception):
-        await realize_stream(bytes.fromhex(encoding))
+        srealize_stream(bytes.fromhex(encoding))
+
+
+@pytest.mark.parametrize("encoding, exception",
+                         [(test[0], test[1]) for test in ill_formed_tests],
+                         ids = [test[2] for test in ill_formed_tests])
+@pytest.mark.asyncio
+async def test_ill_formed_astreaming(encoding, exception):
+    with pytest.raises(exception):
+        await arealize_stream(bytes.fromhex(encoding))
 
 
 def test_decode_indefinite_length_text_string_split_utf8():
     with pytest.raises(StringEncodingError):
         loads(bytes.fromhex('7f 61e3 628182 ff'))
+
+
+
+
+
+
+
+
 
 
 @pytest.mark.parametrize("encoding", ['f97e00', 'fa7fc00000', 'fb7ff8000000000000'])

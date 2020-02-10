@@ -402,4 +402,4 @@ class StreamDecoder:
 def streams_sequence(raw, **kwargs):
     read = BytesIO(raw).read
     decoder = StreamDecoder(read, **kwargs)
-    yield from decoder.stream_sequence()
+    return decoder.stream_sequence()
