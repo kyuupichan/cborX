@@ -27,11 +27,12 @@
 
 from collections import OrderedDict
 from collections.abc import Mapping
+from decimal import Decimal
 from enum import IntEnum
 from functools import total_ordering
 from itertools import count, takewhile
-from decimal import Decimal
 from math import isfinite, inf
+from numbers import Number
 
 import attr
 
@@ -546,6 +547,22 @@ class SortMethod(IntEnum):
 class NumberModel(IntEnum):
     PYTHON = 0
     DISTINCT = 1
+
+
+@total_ordering
+@attr.s(slots=True, frozen=True, eq=False, order=False)
+class GenericNumber:
+
+    value = attr.ib()
+
+    def __eq__(self, other):
+        return self.value == other
+
+    def __lt__(self, other):
+        return self.value < other
+
+    def __hash__(self):
+        return hash((self.value.__class__, self.value))
 
 
 class DataModel:
