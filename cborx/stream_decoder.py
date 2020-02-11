@@ -379,6 +379,12 @@ class StreamDecoder:
 
     # External API
 
+    def stream_one(self, check_eof=False):
+        initial_byte = ord(self.read(1))
+        yield from self._major_decoders[initial_byte >> 5](initial_byte)
+        if check_eof and self._read(1):
+            raise UnconsumedDataError
+
     def stream_sequence(self):
         major_decoders = self._major_decoders
         read = self.read

@@ -109,74 +109,9 @@ async def arealize_stream(raw, **kwargs):
 # Helpers for sync streaming tests
 #
 
-def shandle_il_byte_string(item, item_gen, immutable):
-    items = (srealize_one(item_gen, immutable) for _ in count())
-    parts = takewhile(lambda item: item is not Break, items)
-    return b''.join(parts)
-
-
-def shandle_il_text_string(item, item_gen, immutable):
-    items = (srealize_one(item_gen, immutable) for _ in count())
-    parts = takewhile(lambda item: item is not Break, items)
-    return ''.join(parts)
-
-
-def shandle_il_array(item, item_gen, immutable):
-    items = (srealize_one(item_gen, immutable) for _ in count())
-    parts = takewhile(lambda item: item is not Break, items)
-    return tuple(parts) if immutable else list(parts)
-
-
-def shandle_array(item, item_gen, immutable):
-    parts = (srealize_one(item_gen, immutable) for _ in range(item.length))
-    return tuple(parts) if immutable else list(parts)
-
-
-def shandle_il_map(item, item_gen, immutable):
-    def pairs():
-        while True:
-            key = srealize_one(item_gen, True)
-            if key is Break:
-                break
-            yield key, srealize_one(item_gen, immutable)
-
-    kind = FrozenDict if immutable else dict
-    return kind(pairs())
-
-
-def shandle_map(item, item_gen, immutable):
-    pairs_gen = ((srealize_one(item_gen, True), srealize_one(item_gen, immutable))
-                 for _ in range(item.length))
-    kind = FrozenDict if immutable else dict
-    return kind(pairs_gen)
-
-
-def shandle_tag(item, item_gen, immutable):
-    return CBORTag(item.value, srealize_one(item_gen, immutable))
-
-
-context_shandlers = {
-    ContextILByteString: shandle_il_byte_string,
-    ContextILTextString: shandle_il_text_string,
-    ContextILArray: shandle_il_array,
-    ContextArray: shandle_array,
-    ContextILMap: shandle_il_map,
-    ContextMap: shandle_map,
-    ContextTag: shandle_tag,
-}
-
-
-def srealize_one(item_gen, immutable):
-    item = next(item_gen)
-    handler = context_shandlers.get(item.__class__)
-    if handler:
-        return handler(item, item_gen, immutable)
-    return item
-
-
-def srealize_stream(raw, **kwargs):
+def realize_stream(raw, **kwargs):
     item_gen = streams_sequence(raw, **kwargs)
-    item = srealize_one(item_gen, False)
+    item = realize_one(item_gen, False)
     with pytest.raises(StopIteration):
         next(item_gen)
     return item
@@ -302,7 +237,7 @@ def test_well_formed_loads(encoding, expected):
                          [(test[0], test[1]) for test in singleton_tests],
                          ids = [test[2] for test in singleton_tests])
 def test_well_formed_streaming(encoding, expected):
-    result = srealize_stream(bytes.fromhex(encoding))
+    result = realize_stream(bytes.fromhex(encoding))
     assert result == expected
 
 
@@ -329,7 +264,7 @@ tag_tests = [
                          [(test[0], test[1]) for test in tag_tests],
                          ids = [test[2] for test in tag_tests])
 def test_tag_streaming(encoding, expected):
-    result = srealize_stream(bytes.fromhex(encoding))
+    result = realize_stream(bytes.fromhex(encoding))
     assert result == expected
 
 
@@ -404,7 +339,7 @@ def test_ill_formed(encoding, exception):
                          ids = [test[2] for test in ill_formed_tests])
 def test_ill_formed_streaming(encoding, exception):
     with pytest.raises(exception):
-        srealize_stream(bytes.fromhex(encoding))
+        realize_stream(bytes.fromhex(encoding))
 
 
 @pytest.mark.parametrize("encoding, exception",
@@ -470,11 +405,11 @@ def test_invalid_utf8_streaming(encoding, string_errors, on_error, expected):
     kwargs = {'string_errors': string_errors, 'on_error': on_error}
     if string_errors == 'strict' and on_error is None:
         with pytest.raises(StringEncodingError) as excinfo:
-            srealize_stream(encoding, **kwargs)
+            realize_stream(encoding, **kwargs)
         assert excinfo.type is type(expected)
         assert excinfo.value.args == expected.args
     else:
-        result = srealize_stream(encoding, **kwargs)
+        result = realize_stream(encoding, **kwargs)
         assert result == expected
 
 

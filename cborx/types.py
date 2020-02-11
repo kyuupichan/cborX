@@ -46,6 +46,7 @@ __all__ = (
     'DuplicateKeyError', 'DeterministicError',
     'ContextBase', 'ContextILByteString', 'ContextILTextString', 'ContextILArray', 'ContextILMap',
     'ContextArray', 'ContextMap', 'ContextTag',
+    'realize_one',
 )
 
 # Exception class hierarchy:
@@ -342,7 +343,9 @@ def realize_one(item_gen, immutable):
 
 
 class ContextBase:
-    pass
+
+    def realize(self, item_gen, immutable):
+        raise NotImplementedError
 
 
 class ContextILByteString(ContextBase):
