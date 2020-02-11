@@ -25,7 +25,7 @@
 
 '''CBOR stream decoding.'''
 
-__all__ = ('astreams_sequence', 'streams_sequence', )
+__all__ = ('astreams_sequence', 'streams_sequence', 'diagnostic_form')
 
 
 from functools import partial
@@ -37,7 +37,7 @@ from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
     ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
     ContextArray, ContextMap, ContextTag, Break, CBORSimple,
-    DuplicateKeyError, realize_one,
+    DuplicateKeyError, realize_one, item_diagnostic_form
 )
 from cborx.util import bjoin, sjoin, raise_error
 
@@ -429,3 +429,8 @@ def streams_sequence(raw, **kwargs):
     read = BytesIO(raw).read
     decoder = StreamDecoder(read, **kwargs)
     return decoder.stream_sequence()
+
+
+def diagnostic_form(item_gen):
+    for item in item_gen:
+        yield from item_diagnostic_form(item, item_gen)

@@ -30,6 +30,7 @@ from collections.abc import Mapping
 from functools import total_ordering
 from itertools import count, takewhile
 from decimal import Decimal
+from math import isfinite, inf
 
 import attr
 
@@ -147,6 +148,9 @@ class CBORTag:
 class CBORUndefined:
     '''The class of the Undefined singleton'''
 
+    def __diagnostic__(self, item_gen):
+        return 'undefined'
+
     def __encode_cbor__(self, encoder):
         return b'\xf7'
 
@@ -189,10 +193,12 @@ class CBORSimple:
         if not ((0 <= value <= 19) or (32 <= value <= 255)):
             raise ValueError(f'simple value {value} out of range')
 
+    def __diagnostic__(self, item_gen):
+        yield f'simple({self.value})'
+
     def __encode_cbor__(self, encoder):
         if self.value <= 31:
             return pack_byte(0xe0 + self.value)
-
         return b'\xf8' + pack_byte(self.value)
 
 
@@ -342,6 +348,49 @@ def realize_one(item_gen, immutable):
     return item.realize(item_gen, immutable) if isinstance(item, ContextBase) else item
 
 
+def _bytes_diagnostic(item):
+    return f"h'{item.hex()}'"
+
+
+def _str_diagnostic(item):
+    return f'"{item}"'
+
+
+def _bool_diagnostic(item):
+    return 'true' if item else 'false'
+
+
+def _none_diagnostic(item):
+    return 'null'
+
+
+def _float_diagnostic(item):
+    if isfinite(item):
+        return str(item)
+    if item == inf:
+        return 'Infinity'
+    if item == -inf:
+        return '-Infinity'
+    return 'NaN'
+
+
+diagnostic_handlers = {
+    bytes: _bytes_diagnostic,
+    str: _str_diagnostic,
+    bool: _bool_diagnostic,
+    float: _float_diagnostic,
+    type(None): _none_diagnostic,
+}
+
+
+def item_diagnostic_form(item, item_gen):
+    handler = getattr(item, '__diagnostic__', None)
+    if handler:
+        yield from handler(item_gen)
+    else:
+        yield diagnostic_handlers.get(item.__class__, repr)(item)
+
+
 class ContextBase:
 
     def realize(self, item_gen, immutable):
@@ -351,6 +400,16 @@ class ContextBase:
 class ContextILByteString(ContextBase):
     '''Represents the context of an indefinite-length byte string'''
 
+    def __diagnostic__(self, item_gen):
+        yield '(_ '
+        for n, item in enumerate(item_gen):
+            if item is Break:
+                break
+            if n:
+                yield ', '
+            yield _bytes_diagnostic(item)
+        yield ')'
+
     def realize(self, item_gen, immutable):
         return bjoin(takewhile(lambda item: item is not Break, item_gen))
 
@@ -358,12 +417,32 @@ class ContextILByteString(ContextBase):
 class ContextILTextString(ContextBase):
     '''Represents the context of an indefinite-length text string'''
 
+    def __diagnostic__(self, item_gen):
+        yield '(_ '
+        for n, item in enumerate(item_gen):
+            if item is Break:
+                break
+            if n:
+                yield ', '
+            yield _str_diagnostic(item)
+        yield ')'
+
     def realize(self, item_gen, immutable):
         return sjoin(takewhile(lambda item: item is not Break, item_gen))
 
 
 class ContextILArray(ContextBase):
     '''Represents the context of an indefinite-length array'''
+
+    def __diagnostic__(self, item_gen):
+        yield '[_ '
+        for n, item in enumerate(item_gen):
+            if item is Break:
+                break
+            if n:
+                yield ', '
+            yield from item_diagnostic_form(item, item_gen)
+        yield ']'
 
     def realize(self, item_gen, immutable):
         items = (realize_one(item_gen, immutable) for _ in count())
@@ -374,6 +453,18 @@ class ContextILArray(ContextBase):
 
 class ContextILMap(ContextBase):
     '''Represents the context of an indefinite-length map'''
+
+    def __diagnostic__(self, item_gen):
+        yield '{_ '
+        for n, item in enumerate(item_gen):
+            if item is Break:
+                break
+            if n:
+                yield ', '
+            yield from item_diagnostic_form(item, item_gen)
+            yield ': '
+            yield from item_diagnostic_form(next(item_gen), item_gen)
+        yield '}'
 
     def realize(self, item_gen, immutable):
         keys = (realize_one(item_gen, True) for _ in count())
@@ -389,6 +480,14 @@ class ContextArray(ContextBase):
     def __init__(self, length):
         self.length = length
 
+    def __diagnostic__(self, item_gen):
+        yield '['
+        for n in range(self.length):
+            if n:
+                yield ', '
+            yield from item_diagnostic_form(next(item_gen), item_gen)
+        yield ']'
+
     def realize(self, item_gen, immutable):
         items = (realize_one(item_gen, immutable) for _ in range(self.length))
         cls = tuple if immutable else list
@@ -400,6 +499,16 @@ class ContextMap(ContextBase):
 
     def __init__(self, length):
         self.length = length
+
+    def __diagnostic__(self, item_gen):
+        yield '{'
+        for n in range(self.length):
+            if n:
+                yield ', '
+            yield from item_diagnostic_form(next(item_gen), item_gen)
+            yield ': '
+            yield from item_diagnostic_form(next(item_gen), item_gen)
+        yield '}'
 
     def realize(self, item_gen, immutable):
         pairs = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
@@ -413,6 +522,11 @@ class ContextTag(ContextBase):
 
     def __init__(self, value):
         self.value = value
+
+    def __diagnostic__(self, item_gen):
+        yield f'{self.value}('
+        yield from item_diagnostic_form(next(item_gen), item_gen)
+        yield ')'
 
     def realize(self, item_gen, immutable):
         return CBORTag(self.value, realize_one(item_gen, immutable))
