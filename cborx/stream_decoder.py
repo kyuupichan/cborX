@@ -37,7 +37,7 @@ from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
     ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
     ContextArray, ContextMap, ContextTag, Break, CBORSimple,
-    StringEncodingError,
+    DuplicateKeyError, realize_one,
 )
 from cborx.util import bjoin, sjoin, raise_error
 
@@ -234,7 +234,8 @@ def astreams_sequence(read, **kwargs):
 class StreamDecoder:
     '''Decodes CBOR-encoded data delivered synchronously as a stream'''
 
-    def __init__(self, read, *, string_errors='strict', simple_value=None, on_error=None):
+    def __init__(self, read, *, string_errors='strict', simple_value=None, on_error=None,
+                 check_keys=True):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -248,7 +249,9 @@ class StreamDecoder:
         )
         self._simple_value = simple_value or CBORSimple
         on_error = on_error or raise_error
+        self._on_error = on_error
         self._decode_text = partial(decode_text, string_errors, on_error)
+        self._check_keys = check_keys
 
     def read(self, n):
         result = self._read(n)
@@ -334,21 +337,47 @@ class StreamDecoder:
         length = self.decode_length(initial_byte)
         read = self.read
         major_decoders = self._major_decoders
+        keys = set()
+
         if length is None:
             yield ContextILMap()
-            while True:
-                initial_byte = ord(read(1))
-                if initial_byte == 0xff:
-                    break
-                yield from major_decoders[initial_byte >> 5](initial_byte)
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
+            if self._check_keys:
+                while True:
+                    initial_byte = ord(read(1))
+                    if initial_byte == 0xff:
+                        break
+                    key = realize_one(major_decoders[initial_byte >> 5](initial_byte), True)
+                    if key in keys:
+                        key = self._on_error(DuplicateKeyError(key))
+                    keys.add(key)
+                    yield key
+                    initial_byte = ord(read(1))
+                    yield from major_decoders[initial_byte >> 5](initial_byte)
+            else:
+                while True:
+                    initial_byte = ord(read(1))
+                    if initial_byte == 0xff:
+                        break
+                    yield from major_decoders[initial_byte >> 5](initial_byte)
+                    initial_byte = ord(read(1))
+                    yield from major_decoders[initial_byte >> 5](initial_byte)
             yield Break
         else:
             yield ContextMap(length)
-            for _ in range(length * 2):
-                initial_byte = ord(read(1))
-                yield from major_decoders[initial_byte >> 5](initial_byte)
+            if self._check_keys:
+                for _ in range(length):
+                    initial_byte = ord(read(1))
+                    key = realize_one(major_decoders[initial_byte >> 5](initial_byte), True)
+                    if key in keys:
+                        key = self._on_error(DuplicateKeyError(key))
+                    keys.add(key)
+                    yield key
+                    initial_byte = ord(read(1))
+                    yield from major_decoders[initial_byte >> 5](initial_byte)
+            else:
+                for _ in range(length * 2):
+                    initial_byte = ord(read(1))
+                    yield from major_decoders[initial_byte >> 5](initial_byte)
 
     def decode_tag(self, initial_byte):
         value = self.decode_length(initial_byte)

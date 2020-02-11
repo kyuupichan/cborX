@@ -357,7 +357,6 @@ def invalid_utf8_error(error):
     return 'dog'
 
 invalid_utf8_tests = [
-    # c3b1 is an invalid UTF-8 2-octet sequence, so this is c-a-invalid-t
     ('6480616263', 'strict', invalid_utf8_error, 'dog', 'utf8-1'),
     ('6480616263', 'strict', None, StringEncodingError(bytes.fromhex('80616263')), 'utf8-2'),
     ('6480616263', 'ignore', None, 'abc', 'utf8-3'),
@@ -411,6 +410,51 @@ def test_invalid_utf8_streaming(encoding, string_errors, on_error, expected):
     else:
         result = realize_stream(encoding, **kwargs)
         assert result == expected
+
+
+def duplicate_a_error(error):
+    assert type(error) is DuplicateKeyError
+    assert error.args == ('a', )
+    return 'z'
+
+duplicate_key_tests = [
+    # { 'a': 1, 'b': 2, 'a': 3}
+    ('a3616101616202616103', duplicate_a_error, {'a': 1, 'b': 2, 'z': 3}, {'a': 3, 'b': 2},
+     'dup-a-replace'),
+    ('a3616101616202616103', None, DuplicateKeyError('a'), {'a': 3, 'b': 2}, 'dup-a'),
+    # { 0: 1, 2: 3, False: 4}
+    ('a300010203f404', None, DuplicateKeyError(False), {0: 4, 2: 3}, 'dup-False'),
+    # { 0: 1, 2: 3, 2.0: 4}
+    ('a300010203f9400004', None, DuplicateKeyError(2.0), {0: 1, 2: 4}, 'dup-2.0'),
+
+    # {_ 'a': 1, 'b': 2, 'a': 3}
+    ('bf616101616202616103ff', duplicate_a_error, {'a': 1, 'b': 2, 'z': 3}, {'a': 3, 'b': 2},
+     'il-dup-a-replace'),
+    ('bf616101616202616103ff', None, DuplicateKeyError('a'), {'a': 3, 'b': 2}, 'il=dup-a'),
+    # {_ 0: 1, 2: 3, False: 4}
+    ('bf00010203f404ff', None, DuplicateKeyError(False), {0: 4, 2: 3}, 'il-dup-False'),
+    # {_ 0: 1, 2: 3, 2.0: 4}
+    ('bf00010203f9400004ff', None, DuplicateKeyError(2.0), {0: 1, 2: 4}, 'il-dup-2.0'),
+]
+
+@pytest.mark.parametrize("encoding, on_error, expected, expected_no_check",
+                         [tuple(test[:-1]) for test in duplicate_key_tests],
+                         ids = [test[-1] for test in duplicate_key_tests])
+def test_duplicate_key_streaming(encoding, on_error, expected, expected_no_check):
+    encoding = bytes.fromhex(encoding)
+    if on_error is None:
+        with pytest.raises(DuplicateKeyError) as excinfo:
+            realize_stream(encoding, on_error=on_error)
+        assert excinfo.type is type(expected)
+        assert all(type(arg) is type(earg) and arg == earg
+                   for arg, earg in zip (excinfo.value.args, expected.args))
+        result = realize_stream(encoding, check_keys=False)
+        assert result == expected_no_check
+    else:
+        result = realize_stream(encoding, on_error=on_error)
+        assert result == expected
+        result = realize_stream(encoding, check_keys=False)
+        assert result == expected_no_check
 
 
 #def test_decode_indefinite_length_text_string_split_utf8():
