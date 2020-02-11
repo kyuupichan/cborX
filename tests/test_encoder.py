@@ -162,12 +162,12 @@ def _indefinite_dict():
     (Undefined, b'\xf7'),
 ))
 def test_encode_indefinite_length(value, encoding):
-    assert dumps(value, sort_method=CBORSortMethod.UNSORTED, realize_il=False) == encoding
+    assert dumps(value, sort_method=SortMethod.UNSORTED, realize_il=False) == encoding
 
 
 def test_realized_IL_unsorted():
     # For code coverage
-    assert dumps(CBORILList(iter((2, 1))), sort_method=CBORSortMethod.UNSORTED).hex() == '820201'
+    assert dumps(CBORILList(iter((2, 1))), sort_method=SortMethod.UNSORTED).hex() == '820201'
 
 
 def test_namedtuple():
@@ -190,11 +190,11 @@ def test_counter():
 
 
 @pytest.mark.parametrize('sort_method, deterministic', [
-    (CBORSortMethod.UNSORTED, False),
-    (CBORSortMethod.LEXICOGRAPHIC, False),
-    (CBORSortMethod.LEXICOGRAPHIC, True),
-    (CBORSortMethod.LENGTH_FIRST, False),
-    (CBORSortMethod.LENGTH_FIRST, True),
+    (SortMethod.UNSORTED, False),
+    (SortMethod.LEXICOGRAPHIC, False),
+    (SortMethod.LEXICOGRAPHIC, True),
+    (SortMethod.LENGTH_FIRST, False),
+    (SortMethod.LENGTH_FIRST, True),
 ])
 def test_ordered_dict(sort_method, deterministic):
     c = OrderedDict()
@@ -312,11 +312,11 @@ def test_tagged_encodings(value, expected):
 
 
 @pytest.mark.parametrize('value, sort_method, expected', [
-    ({1, 2, 3}, CBORSortMethod.LEXICOGRAPHIC, 'd9010283010203'),
-    ({1, 2, 3}, CBORSortMethod.LENGTH_FIRST, 'd9010283010203'),
-    ({"abcd", 2, (5, 7)}, CBORSortMethod.LEXICOGRAPHIC, 'd90102 83 02 6461626364 820507'),
-    ({"abcd", 2, (5, 7)}, CBORSortMethod.LENGTH_FIRST, 'd90102 83 02 820507 6461626364'),
-    (frozenset((1, 2, 3)), CBORSortMethod.LEXICOGRAPHIC, 'd90102 83 010203'),
+    ({1, 2, 3}, SortMethod.LEXICOGRAPHIC, 'd9010283010203'),
+    ({1, 2, 3}, SortMethod.LENGTH_FIRST, 'd9010283010203'),
+    ({"abcd", 2, (5, 7)}, SortMethod.LEXICOGRAPHIC, 'd90102 83 02 6461626364 820507'),
+    ({"abcd", 2, (5, 7)}, SortMethod.LENGTH_FIRST, 'd90102 83 02 820507 6461626364'),
+    (frozenset((1, 2, 3)), SortMethod.LEXICOGRAPHIC, 'd90102 83 010203'),
 ], ids = [
     'set 1LX', 'set 1LF', 'set 2LX', 'set 2LF', 'frozenset'
 ])
@@ -419,13 +419,13 @@ def test_deterministic_IL(value):
 
 def test_deterministic_options():
     with pytest.raises(ValueError, match='deterministic encoder requires'):
-        dumps(0, deterministic=True, sort_method=CBORSortMethod.UNSORTED)
+        dumps(0, deterministic=True, sort_method=SortMethod.UNSORTED)
 
 
 @pytest.mark.parametrize('sort_method, expected', [
-    (CBORSortMethod.UNSORTED, 'a8626161f6617af61864f68120f620f6811864f6f4f60af6'),
-    (CBORSortMethod.LEXICOGRAPHIC, 'a80af61864f620f6617af6626161f6811864f68120f6f4f6'),
-    (CBORSortMethod.LENGTH_FIRST, 'a80af620f6f4f61864f6617af68120f6626161f6811864f6'),
+    (SortMethod.UNSORTED, 'a8626161f6617af61864f68120f620f6811864f6f4f60af6'),
+    (SortMethod.LEXICOGRAPHIC, 'a80af61864f620f6617af6626161f6811864f68120f6f4f6'),
+    (SortMethod.LENGTH_FIRST, 'a80af620f6f4f61864f6617af68120f6626161f6811864f6'),
 ])
 def test_sorting(sort_method, expected):
     items = ['aa', 'z', 100, (-1, ), -1, (100, ), False, 10]

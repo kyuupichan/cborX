@@ -27,6 +27,7 @@
 
 from collections import OrderedDict
 from collections.abc import Mapping
+from enum import IntEnum
 from functools import total_ordering
 from itertools import count, takewhile
 from decimal import Decimal
@@ -47,7 +48,7 @@ __all__ = (
     'DuplicateKeyError', 'DeterministicError',
     'ContextBase', 'ContextILByteString', 'ContextILTextString', 'ContextILArray', 'ContextILMap',
     'ContextArray', 'ContextMap', 'ContextTag',
-    'realize_one',
+    'realize_one', 'SortMethod',
 )
 
 # Exception class hierarchy:
@@ -63,8 +64,8 @@ __all__ = (
 #       UnconsumedDataError
 #     InvalidError
 #       StringEncodingError
-#       TagError
 #       DuplicateKeyError
+#       TagError
 #       DeterministicError
 
 
@@ -393,6 +394,9 @@ def item_diagnostic_form(item, item_gen):
 
 class ContextBase:
 
+    def __diagnostic__(self, item_gen):
+        raise NotImplementedError
+
     def realize(self, item_gen, immutable):
         raise NotImplementedError
 
@@ -530,3 +534,29 @@ class ContextTag(ContextBase):
 
     def realize(self, item_gen, immutable):
         return CBORTag(self.value, realize_one(item_gen, immutable))
+
+
+class SortMethod(IntEnum):
+    '''Indicates how to sort deterministic output'''
+    LEXICOGRAPHIC = 0      # draft-ietf-cbor-7049bis-12
+    LENGTH_FIRST = 1       # RFC 7049
+    UNSORTED = 2
+
+
+class NumberModel(IntEnum):
+    PYTHON = 0
+    DISTINCT = 1
+
+
+class DataModel:
+
+    def __init__(self, *, number_model=NumberModel.PYTHON, sort_method=SortMethod.LEXICOGRAPHIC,
+                 permit_il=True, minimal_length=True):
+        if not isinstance(sort_method, SortMethod):
+            raise TypeError(f'invalid sort method {sort_method}')
+        if not isinstance(number_model, NumberModel):
+            raise TypeError(f'invalid number model {number_model}')
+        self.number_model = number_model
+        self.sort_method = sort_method
+        self.permit_il = bool(permit_il)
+        self.minimal_length = bool(minimal_length)

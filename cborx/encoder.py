@@ -38,12 +38,12 @@ from ipaddress import IPv4Address, IPv6Address, IPv4Network, IPv6Network
 from uuid import UUID
 
 from cborx.packing import pack_cbor_length, pack_cbor_short_float, pack_cbor_double
-from cborx.types import FrozenDict, FrozenOrderedDict, EncodingError
+from cborx.types import FrozenDict, FrozenOrderedDict, EncodingError, SortMethod
 from cborx.util import uint_to_be_bytes, bjoin, sjoin, typecode_to_tag_map
 
 
 __all__ = (
-    'dump', 'dumps', 'CBOREncoder', 'CBORDateTimeStyle', 'CBORFloatStyle', 'CBORSortMethod',
+    'dump', 'dumps', 'CBOREncoder', 'CBORDateTimeStyle', 'CBORFloatStyle',
 )
 
 
@@ -67,18 +67,11 @@ class CBORFloatStyle(IntEnum):
     DOUBLE = 1
 
 
-class CBORSortMethod(IntEnum):
-    '''Indicates how to sort deterministic output'''
-    LEXICOGRAPHIC = 0      # draft-ietf-cbor-7049bis-12
-    LENGTH_FIRST = 1       # RFC 7049
-    UNSORTED = 2
-
-
 def sorted_pairs(pairs_gen, method):
     '''Return an iterable sorting the pairs according to method.'''
-    if method == CBORSortMethod.LEXICOGRAPHIC:
+    if method == SortMethod.LEXICOGRAPHIC:
         return sorted(pairs_gen)
-    elif method == CBORSortMethod.LENGTH_FIRST:
+    elif method == SortMethod.LENGTH_FIRST:
         return sorted(pairs_gen, key=lambda pair: (len(pair[0]), pair[0]))
     else:
         return pairs_gen
@@ -86,9 +79,9 @@ def sorted_pairs(pairs_gen, method):
 
 def sorted_items(encoded_items_gen, method):
     '''Return an iterable sorting the items according to method.'''
-    if method == CBORSortMethod.LEXICOGRAPHIC:
+    if method == SortMethod.LEXICOGRAPHIC:
         return sorted(encoded_items_gen)
-    elif method == CBORSortMethod.LENGTH_FIRST:
+    elif method == SortMethod.LENGTH_FIRST:
         return sorted(encoded_items_gen, key=lambda item: (len(item), item))
     else:
         return list(encoded_items_gen)
@@ -99,10 +92,10 @@ class CBOREncoder:
     SHARED_TYPES = {tuple, list, dict, OrderedDict}
 
     def __init__(self, *, tzinfo=None, datetime_style=CBORDateTimeStyle.TIMESTAMP,
-                 float_style=CBORFloatStyle.SHORTEST, sort_method=CBORSortMethod.LEXICOGRAPHIC,
+                 float_style=CBORFloatStyle.SHORTEST, sort_method=SortMethod.LEXICOGRAPHIC,
                  realize_il=True, shared_types=(), deterministic=False):
         if deterministic:
-            if sort_method == CBORSortMethod.UNSORTED:
+            if sort_method == SortMethod.UNSORTED:
                 raise ValueError('a deterministic encoder requires sorting')
             realize_il = True
         # Note: in Python bignums and integers are indistinguishable
@@ -203,8 +196,7 @@ class CBOREncoder:
 
     def encode_ordered_dict(self, value):
         # see https://github.com/Sekenre/cbor-ordered-map-spec/blob/master/CBOR_Ordered_Map.md
-        return self.encode_tag(272) + self.encode_sorted_dict(value.items(),
-                                                              CBORSortMethod.UNSORTED)
+        return self.encode_tag(272) + self.encode_sorted_dict(value.items(), SortMethod.UNSORTED)
 
     def encode_set(self, value):
         return self.encode_tag(258) + self.encode_sorted_list(value)
@@ -279,7 +271,7 @@ class CBOREncoder:
     def encode_ip_network(self, value):
         # For some daft reason a one-element dictionary was chosen over a pair
         pairs = [(value.network_address.packed, value.prefixlen)]
-        return self.encode_tag(261) + self.encode_sorted_dict(pairs, CBORSortMethod.UNSORTED)
+        return self.encode_tag(261) + self.encode_sorted_dict(pairs, SortMethod.UNSORTED)
 
     def encode_typed_array(self, value):
         tag = typecode_to_tag_map.get(value.typecode)
