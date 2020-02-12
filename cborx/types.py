@@ -567,7 +567,8 @@ class GenericNumber:
 
 class DataModel:
 
-    def __init__(self, *, number_model=NumberModel.PYTHON, sort_method=SortMethod.LEXICOGRAPHIC,
+    def __init__(self, *, tag_handler_overrides=None,
+                 number_model=NumberModel.PYTHON, sort_method=SortMethod.LEXICOGRAPHIC,
                  permit_il=True, minimal_length=True):
         if not isinstance(sort_method, SortMethod):
             raise TypeError(f'invalid sort method {sort_method}')
@@ -577,3 +578,4 @@ class DataModel:
         self.sort_method = sort_method
         self.permit_il = bool(permit_il)
         self.minimal_length = bool(minimal_length)
+        self.tag_handlers = default_tag_handlers(tag_handler_overrides)
