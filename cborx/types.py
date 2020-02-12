@@ -49,7 +49,7 @@ __all__ = (
     'DuplicateKeyError', 'DeterministicError',
     'ContextBase', 'ContextILByteString', 'ContextILTextString', 'ContextILArray', 'ContextILMap',
     'ContextArray', 'ContextMap', 'ContextTag',
-    'realize_one', 'SortMethod',
+    'SortMethod', 'DataModel',
 )
 
 # Exception class hierarchy:
@@ -345,11 +345,6 @@ class FrozenOrderedDict(FrozenDict):
     dict_class = OrderedDict
 
 
-def realize_one(item_gen, immutable):
-    item = next(item_gen)
-    return item.realize(item_gen, immutable) if isinstance(item, ContextBase) else item
-
-
 def _bytes_diagnostic(item):
     return f"h'{item.hex()}'"
 
@@ -398,7 +393,7 @@ class ContextBase:
     def __diagnostic__(self, item_gen):
         raise NotImplementedError
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         raise NotImplementedError
 
 
@@ -415,7 +410,7 @@ class ContextILByteString(ContextBase):
             yield _bytes_diagnostic(item)
         yield ')'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         return bjoin(takewhile(lambda item: item is not Break, item_gen))
 
 
@@ -432,7 +427,7 @@ class ContextILTextString(ContextBase):
             yield _str_diagnostic(item)
         yield ')'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         return sjoin(takewhile(lambda item: item is not Break, item_gen))
 
 
@@ -449,7 +444,7 @@ class ContextILArray(ContextBase):
             yield from item_diagnostic_form(item, item_gen)
         yield ']'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         items = (realize_one(item_gen, immutable) for _ in count())
         items = takewhile(lambda item: item is not Break, items)
         cls = tuple if immutable else list
@@ -471,7 +466,7 @@ class ContextILMap(ContextBase):
             yield from item_diagnostic_form(next(item_gen), item_gen)
         yield '}'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         keys = (realize_one(item_gen, True) for _ in count())
         keys = takewhile(lambda key: key is not Break, keys)
         pairs = ((key, realize_one(item_gen, immutable)) for key in keys)
@@ -493,7 +488,7 @@ class ContextArray(ContextBase):
             yield from item_diagnostic_form(next(item_gen), item_gen)
         yield ']'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         items = (realize_one(item_gen, immutable) for _ in range(self.length))
         cls = tuple if immutable else list
         return cls(items)
@@ -515,7 +510,7 @@ class ContextMap(ContextBase):
             yield from item_diagnostic_form(next(item_gen), item_gen)
         yield '}'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         pairs = ((realize_one(item_gen, True), realize_one(item_gen, immutable))
                  for _ in range(self.length))
         cls = FrozenDict if immutable else dict
@@ -533,7 +528,7 @@ class ContextTag(ContextBase):
         yield from item_diagnostic_form(next(item_gen), item_gen)
         yield ')'
 
-    def realize(self, item_gen, immutable):
+    def __realize__(self, realize_one, item_gen, immutable):
         return CBORTag(self.value, realize_one(item_gen, immutable))
 
 
@@ -565,6 +560,14 @@ class GenericNumber:
         return hash((self.value.__class__, self.value))
 
 
+_default_handlers = {}
+
+def default_tag_handlers(updates):
+    result = _default_handlers.copy()
+    result.update(updates or {})
+    return result
+
+
 class DataModel:
 
     def __init__(self, *, tag_handler_overrides=None,
@@ -579,3 +582,8 @@ class DataModel:
         self.permit_il = bool(permit_il)
         self.minimal_length = bool(minimal_length)
         self.tag_handlers = default_tag_handlers(tag_handler_overrides)
+
+    def realize_one(self, item_gen, immutable):
+        item = next(item_gen)
+        realize = getattr(item, '__realize__', None)
+        return realize(self.realize_one, item_gen, immutable) if realize else item

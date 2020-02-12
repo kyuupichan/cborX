@@ -25,7 +25,7 @@
 
 '''CBOR stream decoding.'''
 
-__all__ = ('astreams_sequence', 'streams_sequence', 'diagnostic_form')
+__all__ = ('astreams_sequence', 'streams_sequence', 'diagnostic_form', 'StreamDecoder')
 
 
 from functools import partial
@@ -37,7 +37,7 @@ from cborx.types import (
     BadInitialByteError, MisplacedBreakError, BadSimpleError, UnexpectedEOFError,
     ContextILByteString, ContextILTextString, ContextILArray, ContextILMap,
     ContextArray, ContextMap, ContextTag, Break, CBORSimple,
-    DuplicateKeyError, realize_one, item_diagnostic_form
+    DuplicateKeyError, DataModel, item_diagnostic_form
 )
 from cborx.util import bjoin, sjoin, raise_error
 
@@ -235,7 +235,7 @@ class StreamDecoder:
     '''Decodes CBOR-encoded data delivered synchronously as a stream'''
 
     def __init__(self, read, *, string_errors='strict', simple_value=None, on_error=None,
-                 check_keys=True):
+                 data_model=None, check_keys=True):
         self._read = read
         self._major_decoders = (
             self.decode_unsigned_int,
@@ -252,6 +252,7 @@ class StreamDecoder:
         self._on_error = on_error
         self._decode_text = partial(decode_text, string_errors, on_error)
         self._check_keys = check_keys
+        self._data_model = data_model or DataModel()
 
     def read(self, n):
         result = self._read(n)
@@ -342,6 +343,7 @@ class StreamDecoder:
         if length is None:
             yield ContextILMap()
             if self._check_keys:
+                realize_one = self._data_model.realize_one
                 while True:
                     initial_byte = ord(read(1))
                     if initial_byte == 0xff:
@@ -365,6 +367,7 @@ class StreamDecoder:
         else:
             yield ContextMap(length)
             if self._check_keys:
+                realize_one = self._data_model.realize_one
                 for _ in range(length):
                     initial_byte = ord(read(1))
                     key = realize_one(major_decoders[initial_byte >> 5](initial_byte), True)

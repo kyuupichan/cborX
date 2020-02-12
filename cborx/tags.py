@@ -57,11 +57,3 @@ def decode_bignum(item, data_model, is_negative):
 
 decode_unsigned_bignum = partial(decode_bignum, is_negative=False)
 decode_negative_bignum = partial(decode_bignum, is_negative=True)
-
-
-_default_handlers = {}
-
-def default_tag_handlers(updates):
-    result = _default_handlers.copy()
-    result.update(updates or {})
-    return result

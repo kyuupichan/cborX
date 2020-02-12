@@ -110,8 +110,10 @@ async def arealize_stream(raw, **kwargs):
 #
 
 def realize_stream(raw, **kwargs):
-    item_gen = streams_sequence(raw, **kwargs)
-    item = realize_one(item_gen, False)
+    read = BytesIO(raw).read
+    decoder = StreamDecoder(read, **kwargs)
+    item_gen = decoder.stream_sequence()
+    item = decoder._data_model.realize_one(item_gen, False)
     with pytest.raises(StopIteration):
         next(item_gen)
     return item
